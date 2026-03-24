@@ -4,10 +4,5 @@ dist/
 *.log
 .DS_Store
 coverage/
-
-# Issue creation scripts (local use only)
-create-issues.sh
-create-all-issues.sh
-create-issues.js
-create_issues.py
-issues.json
+.nyc_output/
+*.tsbuildinfo
