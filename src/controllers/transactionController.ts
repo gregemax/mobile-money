@@ -114,3 +114,59 @@ export const getTransactionHandler = async (req: Request, res: Response) => {
     res.status(500).json({ error: "Failed to fetch transaction" });
   }
 };
+
+
+export const cancelTransactionHandler = async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body;
+
+    const transaction = await transactionModel.findById(id);
+
+    if (!transaction) {
+      return res.status(404).json({
+        error: "Transaction not found",
+      });
+    }
+
+    if (transaction.status !== "pending") {
+      return res.status(400).json({
+        error: `Cannot cancel transaction with status '${transaction.status}'`,
+      });
+    }
+
+    const updatedTransaction = await transactionModel.updateStatus(id, "cancelled" );
+
+    console.log("Transaction cancelled", {
+      transactionId: id,
+      reason: reason || null,
+      cancelledAt: new Date().toISOString(),
+    });
+
+    try {
+      if (process.env.WEBHOOK_URL) {
+        await fetch(process.env.WEBHOOK_URL, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            event: "transaction.cancelled",
+            data: updatedTransaction,
+          }),
+        });
+      }
+    } catch (webhookError) {
+      console.error("Webhook notification failed", webhookError);
+    }
+
+    return res.json({
+      message: "Transaction cancelled successfully",
+      transaction: updatedTransaction,
+    });
+  } catch (error) {
+    res.status(500).json({
+      error: "Failed to cancel transaction",
+    });
+  }
+};
