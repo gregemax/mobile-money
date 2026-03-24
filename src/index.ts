@@ -17,6 +17,12 @@ import {
   haltOnTimedout,
   timeoutErrorHandler,
 } from "./middleware/timeout";
+import {
+  createQueueDashboard,
+  getQueueHealth,
+  pauseQueueEndpoint,
+  resumeQueueEndpoint,
+} from "./queue";
 
 dotenv.config();
 
@@ -120,6 +126,11 @@ app.use("/api/transactions", transactionDisputeRoutes);
 app.use("/api/transactions/bulk", bulkRoutes);
 app.use("/api/disputes", disputeRoutes);
 
+// Queue health check
+app.get("/health/queue", getQueueHealth);
+app.post("/admin/queues/pause", pauseQueueEndpoint);
+app.post("/admin/queues/resume", resumeQueueEndpoint);
+
 // Timeout error handler (must be before general error handler)
 app.use(timeoutErrorHandler);
 app.use(errorHandler);
@@ -133,6 +144,10 @@ connectRedis()
     console.error("Failed to connect to Redis:", err);
     console.warn("Distributed locks will not be available");
   });
+
+// Initialize queue dashboard
+const queueRouter = createQueueDashboard();
+app.use("/admin/queues", queueRouter);
 
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
