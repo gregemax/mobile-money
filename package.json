@@ -5,6 +5,8 @@
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
+    "docker:dev": "docker-compose -f docker-compose.dev.yml up",
+    "docker:dev:down": "docker-compose -f docker-compose.dev.yml down",
     "build": "tsc",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
