@@ -11,9 +11,9 @@ import { statsRoutes } from "./routes/stats";
 import { errorHandler } from "./middleware/errorHandler";
 import { connectRedis, redisClient } from "./config/redis";
 import { pool } from "./config/database";
+import { validateStellarNetwork, logStellarNetwork } from "./config/stellar";
 import { globalTimeout, haltOnTimedout, timeoutErrorHandler } from "./middleware/timeout";
 import { responseTime } from "./middleware/responseTime";
-import { createQueueDashboard, getQueueHealth, pauseQueueEndpoint, resumeQueueEndpoint } from "./queue";
 import {
   createQueueDashboard,
   getQueueHealth,
@@ -28,6 +28,10 @@ import { metricsMiddleware } from "./middleware/metrics";
 
 dotenv.config();
 
+// Validate Stellar network configuration
+validateStellarNetwork();
+logStellarNetwork();
+
 const app = express();
 const PORT = process.env.PORT || 3000;
 
@@ -40,10 +44,7 @@ const RATE_LIMIT_MAX_REQUESTS = parseInt(
 );
 
 const limiter = rateLimit({
-  windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
-  max: Number(process.env.RATE_LIMIT_MAX_REQUESTS) || 100,
   windowMs: RATE_LIMIT_WINDOW_MS,
-  windowMs: RATE_LIMIT_WINDOW_MS, // 15 minutes
   max: RATE_LIMIT_MAX_REQUESTS,
   standardHeaders: true,
   legacyHeaders: false,

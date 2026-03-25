@@ -139,6 +139,22 @@ If not specified, the system uses the default values shown above.
 
 When a transaction is rejected due to limit exceeded, the error response includes your current KYC level, remaining limit, and upgrade suggestions.
 
+## Stellar Network Configuration
+
+The application supports both Stellar `testnet` and `mainnet`. You can switch between them using the `STELLAR_NETWORK` environment variable.
+
+### Environment Variables
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `STELLAR_NETWORK` | The Stellar network to use (`testnet` or `mainnet`) | `testnet` |
+| `ALLOW_MAINNET_IN_DEV` | Allow using mainnet when `NODE_ENV=development` | `false` |
+
+### Safety Measures
+
+- **Development Guard**: By default, the application will refuse to start on `mainnet` if `NODE_ENV` is set to `development`. This prevents accidental transactions on the live network during development.
+- **Startup Logs**: The application logs the current network on startup with a clear warning if `mainnet` is active.
+
 ## Git Hooks
 
 This project uses [Husky](https://typicode.github.io/husky/) to enforce code quality via Git hooks.
