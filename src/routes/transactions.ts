@@ -3,8 +3,8 @@ import {
   depositHandler,
   withdrawHandler,
   getTransactionHandler,
-  cancelTransactionHandler,
-  validateTransaction,
+  updateNotesHandler,
+  searchTransactionsHandler,
 } from "../controllers/transactionController";
 import { TimeoutPresets, haltOnTimedout } from "../middleware/timeout";
 
@@ -28,8 +28,25 @@ transactionRoutes.post(
   withdrawHandler
 );
 
-// Get transaction
-transactionRoutes.get("/:id", TimeoutPresets.quick, haltOnTimedout, getTransactionHandler);
+// Quick read operation
+transactionRoutes.get(
+  "/:id",
+  TimeoutPresets.quick,
+  haltOnTimedout,
+  getTransactionHandler,
+);
 
-// Cancel transaction
-transactionRoutes.post("/:id/cancel", TimeoutPresets.quick, haltOnTimedout, cancelTransactionHandler);
+// Notes and search
+transactionRoutes.patch(
+  "/:id/notes",
+  TimeoutPresets.quick,
+  haltOnTimedout,
+  updateNotesHandler,
+);
+
+transactionRoutes.get(
+  "/search",
+  TimeoutPresets.quick,
+  haltOnTimedout,
+  searchTransactionsHandler,
+);

@@ -7,6 +7,7 @@ import dotenv from "dotenv";
 import { transactionRoutes } from "./routes/transactions";
 import { bulkRoutes } from "./routes/bulk";
 import { transactionDisputeRoutes, disputeRoutes } from "./routes/disputes";
+import { statsRoutes } from "./routes/stats";
 import { errorHandler } from "./middleware/errorHandler";
 import { connectRedis, redisClient } from "./config/redis";
 import { pool } from "./config/database";
@@ -30,8 +31,13 @@ dotenv.config();
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-const RATE_LIMIT_WINDOW_MS     = parseInt(process.env.RATE_LIMIT_WINDOW_MS     ?? '900000', 10);
-const RATE_LIMIT_MAX_REQUESTS  = parseInt(process.env.RATE_LIMIT_MAX_REQUESTS  ?? '100',    10);
+// Rate limiter configuration
+const RATE_LIMIT_WINDOW_MS = parseInt(
+  process.env.RATE_LIMIT_WINDOW_MS || "900000",
+); // 15 minutes
+const RATE_LIMIT_MAX_REQUESTS = parseInt(
+  process.env.RATE_LIMIT_MAX_REQUESTS || "100",
+);
 
 const limiter = rateLimit({
   windowMs: Number(process.env.RATE_LIMIT_WINDOW_MS) || 15 * 60 * 1000,
@@ -119,6 +125,7 @@ app.use("/api/transactions", transactionRoutes);
 app.use("/api/transactions", transactionDisputeRoutes);
 app.use("/api/transactions/bulk", bulkRoutes);
 app.use("/api/disputes", disputeRoutes);
+app.use("/api/stats", statsRoutes);
 
 // Queue endpoints
 app.get("/health/queue", getQueueHealth);
@@ -152,7 +159,11 @@ connectRedis()
 const queueRouter = createQueueDashboard();
 app.use("/admin/queues", queueRouter);
 
-// Start server
-app.listen(PORT, () => console.log(`Server running on port ${PORT}`));
+app.listen(PORT, () => {
+  console.log(`Server running on port ${PORT}`);
+  console.log(
+    `Rate limit: ${RATE_LIMIT_MAX_REQUESTS} requests per ${RATE_LIMIT_WINDOW_MS / 1000}s`,
+  );
+});
 
 export default app;

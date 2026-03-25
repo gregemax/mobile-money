@@ -15,7 +15,9 @@
     "lint": "eslint src --ext .ts",
     "test": "jest",
     "test:watch": "jest --watch",
-    "test:coverage": "jest --coverage"
+    "test:coverage": "jest --coverage",
+    "type-check": "tsc --noEmit",
+    "postinstall": "npm run prepare"
   },
   "lint-staged": {
     "*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}": "prettier --write"
