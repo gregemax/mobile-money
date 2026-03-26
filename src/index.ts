@@ -12,7 +12,11 @@ import { errorHandler } from "./middleware/errorHandler";
 import { connectRedis, redisClient } from "./config/redis";
 import { pool } from "./config/database";
 import { validateStellarNetwork, logStellarNetwork } from "./config/stellar";
-import { globalTimeout, haltOnTimedout, timeoutErrorHandler } from "./middleware/timeout";
+import {
+  globalTimeout,
+  haltOnTimedout,
+  timeoutErrorHandler,
+} from "./middleware/timeout";
 import { responseTime } from "./middleware/responseTime";
 import {
   createQueueDashboard,
@@ -59,7 +63,7 @@ app.use(cors());
 app.use(
   express.json({
     limit: process.env.REQUEST_SIZE_LIMIT || "10mb", // Default 10mb
-  })
+  }),
 );
 
 // --- Optional: urlencoded parser with same limit ---
@@ -67,14 +71,16 @@ app.use(
   express.urlencoded({
     limit: process.env.REQUEST_SIZE_LIMIT || "10mb",
     extended: true,
-  })
+  }),
 );
 
 app.use(limiter);
 app.use(responseTime);
 
 // Health & readiness
-app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+app.get("/health", (req, res) =>
+  res.json({ status: "ok", timestamp: new Date().toISOString() }),
+);
 
 // Basic health check
 app.get("/health", (req, res) => {
@@ -143,18 +149,14 @@ app.get("/health/queue", getQueueHealth);
 app.post("/admin/queues/pause", pauseQueueEndpoint);
 app.post("/admin/queues/resume", resumeQueueEndpoint);
 
-// --- NEW: Global handler for payload too large ---
-app.use((err: any, req: Request, res: Response, next: NextFunction) => {
-  if (err.type === "entity.too.large") {
-    return res.status(413).json({
-      error: "Payload Too Large",
-      message: `Request exceeds the maximum size of ${process.env.REQUEST_SIZE_LIMIT || "10mb"}`,
-    });
-  }
-  next(err);
-});
-
 // Error handlers
+app.use(
+  (err: Error | unknown, req: Request, res: Response, _next: NextFunction) => {
+    const message =
+      err instanceof Error ? err.message : "Internal Server Error";
+    res.status(500).json({ error: message });
+  },
+);
 app.use(timeoutErrorHandler);
 app.use(errorHandler);
 

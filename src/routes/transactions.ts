@@ -6,6 +6,7 @@ import {
   updateNotesHandler,
   searchTransactionsHandler,
 } from "../controllers/transactionController";
+import { validateTransaction } from "../middleware/validateTransaction";
 import { TimeoutPresets, haltOnTimedout } from "../middleware/timeout";
 
 export const transactionRoutes = Router();
@@ -16,7 +17,7 @@ transactionRoutes.post(
   TimeoutPresets.long,
   haltOnTimedout,
   validateTransaction,
-  depositHandler
+  depositHandler,
 );
 
 // Withdraw route
@@ -25,7 +26,7 @@ transactionRoutes.post(
   TimeoutPresets.long,
   haltOnTimedout,
   validateTransaction,
-  withdrawHandler
+  withdrawHandler,
 );
 
 // Quick read operation

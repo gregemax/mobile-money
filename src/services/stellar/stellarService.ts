@@ -43,7 +43,7 @@ export class StellarService {
 
       // ✅ REAL MODE
       const account = await this.server.loadAccount(
-        this.issuerKeypair.publicKey()
+        this.issuerKeypair.publicKey(),
       );
 
       const transaction = new StellarSdk.TransactionBuilder(account, {
@@ -55,13 +55,19 @@ export class StellarService {
             destination: destinationAddress,
             asset: StellarSdk.Asset.native(),
             amount: amount,
-          })
+          }),
         )
         .setTimeout(30)
         .build();
 
       transaction.sign(this.issuerKeypair);
-      await this.server.submitTransaction(transaction);
+      const response: StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse =
+        await this.server.submitTransaction(transaction);
+
+      console.log("Stellar payment successful", {
+        hash: response.hash,
+        ledger: response.ledger,
+      });
 
       transactionTotal.inc({
         type: "stellar_payment",
@@ -94,9 +100,7 @@ export class StellarService {
       }
 
       const account = await this.server.loadAccount(address);
-      const balance = account.balances.find(
-        (b) => b.asset_type === "native"
-      );
+      const balance = account.balances.find((b) => b.asset_type === "native");
 
       return balance ? balance.balance : "0";
     } catch (error) {

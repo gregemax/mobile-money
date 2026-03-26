@@ -1,4 +1,18 @@
-import axios, { AxiosInstance } from "axios";
+import axios, { AxiosInstance, AxiosError } from "axios";
+
+// This interface is now used in the methods below
+interface AirtelResponse {
+  data?: {
+    transaction?: {
+      status: string;
+      id: string;
+    };
+  };
+  status?: {
+    success: boolean;
+    code: string;
+  };
+}
 
 export class AirtelProvider {
   private client: AxiosInstance;
@@ -47,11 +61,16 @@ export class AirtelProvider {
         return await fn();
       } catch (err) {
         lastError = err as Error;
-        const status = (err as any).response?.status;
-        const code = (err as any).code;
+        const axiosError = err as AxiosError;
 
-        // Retry only for transient errors
-        if ((status && status >= 500) || code === "ECONNABORTED") {
+        if (axiosError.response?.status === 401) {
+          this.token = null;
+        }
+
+        if (
+          (axiosError.response?.status && axiosError.response.status >= 500) ||
+          axiosError.code === "ECONNABORTED"
+        ) {
           console.warn(`Retrying Airtel request (${i + 1})`);
           await new Promise((res) => setTimeout(res, 1000 * (i + 1)));
           continue;
@@ -68,7 +87,8 @@ export class AirtelProvider {
 
     return this.withRetry(async () => {
       try {
-        const response = await this.client.post(
+        // Apply AirtelResponse here
+        const response = await this.client.post<AirtelResponse>(
           "/merchant/v1/payments/",
           {
             reference,
@@ -105,7 +125,8 @@ export class AirtelProvider {
 
     return this.withRetry(async () => {
       try {
-        const response = await this.client.get(
+        // Apply AirtelResponse here
+        const response = await this.client.get<AirtelResponse>(
           `/standard/v1/payments/${reference}`,
           {
             headers: {
@@ -129,7 +150,8 @@ export class AirtelProvider {
 
     return this.withRetry(async () => {
       try {
-        const response = await this.client.post(
+        // Apply AirtelResponse here
+        const response = await this.client.post<AirtelResponse>(
           "/standard/v1/disbursements/",
           {
             reference,

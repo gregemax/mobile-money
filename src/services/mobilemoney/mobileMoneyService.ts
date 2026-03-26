@@ -57,8 +57,11 @@ export class MobileMoneyService {
       return result;
     } catch (error) {
       status = "error";
-      const err = error as any;
-      if (err.code === "ECONNABORTED" || err.message?.toLowerCase().includes("timeout")) {
+      const err = error as { code?: string; message?: string };
+      if (
+        err.code === "ECONNABORTED" ||
+        err.message?.toLowerCase().includes("timeout")
+      ) {
         timeoutRequestsTotal.inc({ provider, operation });
       }
       throw error;
@@ -166,10 +169,8 @@ export class MobileMoneyService {
     }
 
     try {
-      const result = await this.executeWithTracking(
-        providerKey,
-        "payout",
-        () => providerInstance.sendPayout(phoneNumber, amount),
+      const result = await this.executeWithTracking(providerKey, "payout", () =>
+        providerInstance.sendPayout(phoneNumber, amount),
       );
 
       if (result.success) {
