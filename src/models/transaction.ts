@@ -81,7 +81,12 @@ export interface Transaction {
   status: TransactionStatus;
   tags: string[];
   notes?: string;
+  adminNotes?: string;
   admin_notes?: string;
+  userId?: string | null;
+  idempotencyKey?: string | null;
+  idempotencyExpiresAt?: Date | null;
+  retryCount?: number;
   webhook_delivery_status?: "pending" | "delivered" | "failed" | "skipped";
   webhook_last_attempt_at?: Date | null;
   webhook_delivered_at?: Date | null;
@@ -137,8 +142,8 @@ export function mapTransactionRow(
     notes:
       row.notes != null && row.notes !== "" ? String(row.notes) : undefined,
     admin_notes:
-      row.admin_notes != null && row.admin_notes !== ""
-        ? String(row.admin_notes)
+      dbRow.admin_notes != null && dbRow.admin_notes !== ""
+        ? String(dbRow.admin_notes)
         : undefined,
     metadata:
       row.metadata &&
@@ -153,6 +158,12 @@ export function mapTransactionRow(
     retryCount: Number(dbRow.retry_count ?? row.retryCount ?? 0),
     createdAt:
       created instanceof Date ? created : new Date(String(created ?? "")),
+    updatedAt:
+      updated instanceof Date
+        ? updated
+        : updated
+          ? new Date(String(updated))
+          : null,
   };
 }
 

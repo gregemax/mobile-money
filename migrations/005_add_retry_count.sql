@@ -1,4 +1,4 @@
--- Migration: 003_add_retry_count
+-- Migration: 005_add_retry_count
 -- Description: Track application-level retry attempts for transaction processing
 
 ALTER TABLE transactions

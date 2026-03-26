@@ -69,7 +69,7 @@ function discoverMigrations(): MigrationFile[] {
     .filter((f) => /^\d+_.+\.sql$/.test(f) && !f.endsWith(".down.sql"))
     .sort();
 
-  return files.map((filename) => {
+  const migrations = files.map((filename) => {
     const match = filename.match(/^(\d+)_(.+)\.sql$/);
     if (!match) throw new Error(`Unexpected migration filename: ${filename}`);
 
@@ -85,6 +85,28 @@ function discoverMigrations(): MigrationFile[] {
       downPath: fs.existsSync(downPath) ? downPath : null,
     };
   });
+
+  const versions = new Map<string, string[]>();
+  for (const migration of migrations) {
+    const existing = versions.get(migration.version) ?? [];
+    existing.push(migration.name);
+    versions.set(migration.version, existing);
+  }
+
+  const duplicates = [...versions.entries()].filter(
+    ([, names]) => names.length > 1,
+  );
+
+  if (duplicates.length > 0) {
+    const lines = duplicates
+      .map(([version, names]) => `version ${version}: ${names.join(", ")}`)
+      .join("; ");
+    throw new Error(
+      `Duplicate migration version prefix detected. Each migration number must be unique. Conflicts: ${lines}`,
+    );
+  }
+
+  return migrations;
 }
 
 async function normalizeLegacyAppliedVersions(

@@ -128,12 +128,45 @@ class SlowQueryPool extends Pool {
  * Primary connection pool – handles all write operations
  * (INSERT, UPDATE, DELETE) and read operations when no replica is available.
  */
-export const pool = new SlowQueryPool({
+export const pool = new Pool({
   connectionString: process.env.DATABASE_URL,
   max: 20,
   idleTimeoutMillis: 30000,
   connectionTimeoutMillis: 2000,
 });
+
+// Wrap query for slow-query logging while preserving Pool typings.
+const originalPoolQuery = pool.query.bind(pool);
+(pool as Pool & { query: (...args: any[]) => Promise<any> }).query = async (
+  ...args: any[]
+): Promise<any> => {
+  const queryConfig = args[0];
+  const values = args[1];
+  const startTime = process.hrtime.bigint();
+  const queryString =
+    typeof queryConfig === "string" ? queryConfig : queryConfig?.text ?? "";
+  const queryParams =
+    typeof queryConfig === "string" ? values : queryConfig?.values;
+
+  try {
+    const result = await (originalPoolQuery as (...callArgs: any[]) => Promise<any>)(
+      ...args,
+    );
+    const endTime = process.hrtime.bigint();
+    const durationMs = Number(endTime - startTime) / 1e6;
+    if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+      logSlowQuery(queryString, durationMs, queryParams);
+    }
+    return result;
+  } catch (error) {
+    const endTime = process.hrtime.bigint();
+    const durationMs = Number(endTime - startTime) / 1e6;
+    if (durationMs > SLOW_QUERY_THRESHOLD_MS) {
+      logSlowQuery(queryString, durationMs, queryParams);
+    }
+    throw error;
+  }
+};
 
 /**
  * Read replica connection pool – handles SELECT queries to take load off the

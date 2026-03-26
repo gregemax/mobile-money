@@ -1,4 +1,4 @@
--- Migration: 003_add_user_email
+-- Migration: 007_add_user_email
 -- Description: Add email column to users table for notifications
 -- Up migration
 
