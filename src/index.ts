@@ -29,6 +29,7 @@ import { createKYCRoutes } from "./routes/kycRoutes";
 import { vaultRoutes } from "./routes/vaults";
 import { createPushRouter } from "./routes/push";
 import { adminRoutes } from "./routes/admin";
+import webhookRoutes from "./routes/webhooks";
 import { errorHandler } from "./middleware/errorHandler";
 import {
   connectRedis,
@@ -225,6 +226,7 @@ app.use("/api/contacts", contactsRoutes);
 app.use("/api/reports", reportsRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
 app.use("/api/admin", requireAuth, adminRoutes);
+app.use("/api/webhooks", webhookRoutes);
 app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
 app.use("/sep12", createSep12Router(pool));
