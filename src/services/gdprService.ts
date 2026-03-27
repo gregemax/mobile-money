@@ -67,9 +67,16 @@ export class GDPRService {
     };
   }
 
-  async anonymizeEmail(email: string ) {
+  async anonymizeEmail(email: string) {
     return `${this.hashString(email).slice(4, 8)}-${uuid()}@anonymized.local`;
   }
 
+  async anonymizePhoneNumber(phone: string ) {
+    return this.hashString(phone);
+  }
 
+  async anonymizeStellaAddress(addr: string ) {
+    return this.hashString(addr);
+  }
+  
 }
