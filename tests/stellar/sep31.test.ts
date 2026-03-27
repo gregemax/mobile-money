@@ -1,4 +1,5 @@
 import request from "supertest";
+import express from "express";
 
 // Prefix with 'mock' to allow use in hoisted jest.mock
 const mockCreate = jest.fn();
@@ -22,7 +23,12 @@ jest.mock("../../src/models/transaction", () => {
   };
 });
 
-import app from "../../src/index";
+import sep31Router from "../../src/stellar/sep31";
+
+// Create a minimal Express app mounting the SEP-31 router
+const app = express();
+app.use(express.json());
+app.use("/sep31", sep31Router);
 
 describe("SEP-31 Cross-Border Payments API", () => {
   beforeEach(() => {

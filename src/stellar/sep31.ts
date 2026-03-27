@@ -52,7 +52,9 @@ const SEP31_CONFIG = {
   feeFixed: parseFloat(process.env.SEP31_FEE_FIXED || "1.00"),
   feePercent: parseFloat(process.env.SEP31_FEE_PERCENT || "0.5"),
   statusEta: parseInt(process.env.SEP31_STATUS_ETA || "600", 10),
-  receivingAccount: process.env.STELLAR_RECEIVING_ACCOUNT || "",
+  get receivingAccount(): string {
+    return process.env.STELLAR_RECEIVING_ACCOUNT || "";
+  },
 };
 
 // --- Rate Limiters ---
