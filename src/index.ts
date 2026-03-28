@@ -249,6 +249,7 @@ app.use("/sep10", createSep10Router());
 app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
 app.use("/sep12", createSep12Router(pool));
+app.use("/sep10", createSep10Router());
 app.use("/.well-known/stellar.toml", tomlRouter);
 
 app.use(
