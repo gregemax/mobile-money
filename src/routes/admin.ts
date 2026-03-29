@@ -6,16 +6,51 @@ import {
   validateDashboardConfig,
   DASHBOARD_CONFIG_VALIDATION_ERRORS,
 } from "../utils/dashboardConfig";
+import {
+  rateLimitExport,
+  rateLimitListQueries,
+  RATE_LIMIT_CONFIG,
+} from "../middleware/rateLimit";
 import { MobileMoneyService } from "../services/mobilemoney/mobileMoneyService";
 import { getQueueStats } from "../queue/transactionQueue";
 import { redisClient } from "../config/redis";
 import { checkReplicaHealth } from "../config/database";
+import { UserModel } from "../models/users";
+import multer from "multer";
+import {
+  parseCSV,
+  reconcileTransactions,
+} from "../services/csvReconciliation";
+import {
+  getTransactionResolutionPercentiles,
+  getDisputeResolutionPercentiles,
+  getTransactionResolutionTrends,
+  getDisputeResolutionTrends,
+} from "../services/metrics";
+import { dlqInspectorHandler } from "../queue/dlq";
 
 const router = Router();
 const IMPERSONATION_TOKEN_EXPIRES_IN = "15m";
 const IMPERSONATION_TOKEN_TTL_MS = 15 * 60 * 1000;
 const READ_ONLY_IMPERSONATION_MESSAGE =
   "This token is read-only and cannot be used for mutations.";
+
+// Multer configuration for CSV uploads
+const csvUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 }, // 10MB limit
+  fileFilter: (_req, file, cb) => {
+    if (
+      file.mimetype === "text/csv" ||
+      file.mimetype === "application/vnd.ms-excel" ||
+      file.originalname.endsWith(".csv")
+    ) {
+      cb(null, true);
+    } else {
+      cb(new Error("Only CSV files are allowed"));
+    }
+  },
+});
 
 interface User {
   id: string;
@@ -88,11 +123,7 @@ const requireAdmin = (req: Request, res: Response, next: NextFunction) => {
   next();
 };
 
-const requireSuperAdmin = (
-  req: Request,
-  res: Response,
-  next: NextFunction,
-) => {
+const requireSuperAdmin = (req: Request, res: Response, next: NextFunction) => {
   const user = (req as AuthRequest).user;
 
   if (!user || !isSuperAdminRole(user.role)) {
@@ -143,6 +174,68 @@ const paginate = <T>(data: T[], page: number, limit: number) => {
 
 /**
  * =========================
+ * METRICS
+ * =========================
+ */
+
+// GET /api/admin/metrics/transactions/resolution
+router.get(
+  "/metrics/transactions/resolution",
+  requireAdmin,
+  logAdminAction("GET_TRANSACTION_RESOLUTION_METRICS"),
+  async (req: Request, res: Response) => {
+    try {
+      const daysBack = parseInt(req.query.days as string) || 30;
+      const metrics = await getTransactionResolutionPercentiles(daysBack);
+      const trends = await getTransactionResolutionTrends(7);
+
+      res.json({
+        metrics,
+        trends,
+        period: `${daysBack} days`,
+        sla_threshold_ms: 24 * 60 * 60 * 1000,
+        sla_threshold_hours: 24,
+      });
+    } catch (err) {
+      console.error("Error fetching transaction resolution metrics:", err);
+      res.status(500).json({
+        message: "Failed to retrieve transaction resolution metrics",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+// GET /api/admin/metrics/disputes/resolution
+router.get(
+  "/metrics/disputes/resolution",
+  requireAdmin,
+  logAdminAction("GET_DISPUTE_RESOLUTION_METRICS"),
+  async (req: Request, res: Response) => {
+    try {
+      const daysBack = parseInt(req.query.days as string) || 30;
+      const metrics = await getDisputeResolutionPercentiles(daysBack);
+      const trends = await getDisputeResolutionTrends(7);
+
+      res.json({
+        metrics,
+        trends,
+        period: `${daysBack} days`,
+        sla_threshold_ms: 24 * 60 * 60 * 1000,
+        sla_threshold_hours: 24,
+      });
+    } catch (err) {
+      console.error("Error fetching dispute resolution metrics:", err);
+      res.status(500).json({
+        message: "Failed to retrieve dispute resolution metrics",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+/**
+ * =========================
  * USERS
  * =========================
  */
@@ -151,6 +244,7 @@ const paginate = <T>(data: T[], page: number, limit: number) => {
 router.get(
   "/users",
   requireAdmin,
+  rateLimitListQueries,
   logAdminAction("LIST_USERS"),
   (req: Request, res: Response) => {
     const page = Number(req.query.page) || 1;
@@ -161,7 +255,6 @@ router.get(
     res.json(result);
   },
 );
-
 // GET /api/admin/users/:id
 router.get(
   "/users/:id",
@@ -177,7 +270,6 @@ router.get(
     res.json(user);
   },
 );
-
 // POST /api/admin/users/:id/impersonation-token
 router.post(
   "/users/:id/impersonation-token",
@@ -271,6 +363,8 @@ router.post(
   },
 );
 
+export default router;
+
 // PUT /api/admin/users/:id
 router.put(
   "/users/:id",
@@ -304,6 +398,184 @@ router.post(
     user.locked = false;
 
     res.json({ message: "User account unlocked" });
+  },
+);
+
+// POST /api/admin/users/:id/freeze
+router.post(
+  "/users/:id/freeze",
+  requireAdmin,
+  logAdminAction("FREEZE_USER"),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { reason } = req.body;
+      const adminUser = (req as AuthRequest).user;
+
+      if (!adminUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate reason
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({
+          message: "A reason is required for freezing an account",
+        });
+      }
+
+      const userModel = new UserModel();
+
+      // Check if user exists
+      const user = await userModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if already frozen
+      if (user.status === "frozen") {
+        return res.status(400).json({
+          message: "User account is already frozen",
+        });
+      }
+
+      // Freeze the user
+      const updatedUser = await userModel.updateStatus(
+        userId,
+        "frozen",
+        adminUser.id,
+        reason.trim(),
+        req.ip,
+        req.get("user-agent"),
+      );
+
+      if (!updatedUser) {
+        return res
+          .status(500)
+          .json({ message: "Failed to freeze user account" });
+      }
+
+      console.log(`[ADMIN] User account frozen: ${userId}`, {
+        adminId: adminUser.id,
+        targetUserId: userId,
+        reason: reason.trim(),
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({
+        message: "User account frozen successfully",
+        user: {
+          id: updatedUser.id,
+          status: updatedUser.status,
+        },
+      });
+    } catch (error) {
+      console.error("Error freezing user account:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// POST /api/admin/users/:id/unfreeze
+router.post(
+  "/users/:id/unfreeze",
+  requireAdmin,
+  logAdminAction("UNFREEZE_USER"),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const { reason } = req.body;
+      const adminUser = (req as AuthRequest).user;
+
+      if (!adminUser) {
+        return res.status(401).json({ message: "Authentication required" });
+      }
+
+      // Validate reason
+      if (!reason || typeof reason !== "string" || reason.trim().length === 0) {
+        return res.status(400).json({
+          message: "A reason is required for unfreezing an account",
+        });
+      }
+
+      const userModel = new UserModel();
+
+      // Check if user exists
+      const user = await userModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Check if not frozen
+      if (user.status !== "frozen") {
+        return res.status(400).json({
+          message: "User account is not frozen",
+        });
+      }
+
+      // Unfreeze the user
+      const updatedUser = await userModel.updateStatus(
+        userId,
+        "active",
+        adminUser.id,
+        reason.trim(),
+        req.ip,
+        req.get("user-agent"),
+      );
+
+      if (!updatedUser) {
+        return res
+          .status(500)
+          .json({ message: "Failed to unfreeze user account" });
+      }
+
+      console.log(`[ADMIN] User account unfrozen: ${userId}`, {
+        adminId: adminUser.id,
+        targetUserId: userId,
+        reason: reason.trim(),
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({
+        message: "User account unfrozen successfully",
+        user: {
+          id: updatedUser.id,
+          status: updatedUser.status,
+        },
+      });
+    } catch (error) {
+      console.error("Error unfreezing user account:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
+  },
+);
+
+// GET /api/admin/users/:id/status-history
+router.get(
+  "/users/:id/status-history",
+  requireAdmin,
+  logAdminAction("GET_USER_STATUS_HISTORY"),
+  async (req: Request, res: Response) => {
+    try {
+      const userId = req.params.id;
+      const userModel = new UserModel();
+
+      // Check if user exists
+      const user = await userModel.findById(userId);
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      const auditHistory = await userModel.getAuditHistory(userId);
+
+      res.json({
+        userId: user.id,
+        currentStatus: user.status,
+        history: auditHistory,
+      });
+    } catch (error) {
+      console.error("Error fetching user status history:", error);
+      res.status(500).json({ message: "Internal server error" });
+    }
   },
 );
 
@@ -395,6 +667,7 @@ router.get(
 router.put(
   "/transactions/:id",
   requireAdmin,
+  rateLimitListQueries,
   logAdminAction("UPDATE_TRANSACTION"),
   (req: Request, res: Response) => {
     const tx = transactions.find((t) => t.id === req.params.id);
@@ -417,7 +690,85 @@ router.patch(
   updateAdminNotesHandler,
 );
 
-export const adminRoutes = router;
+/**
+ * =========================
+ * QUEUES & DLQ
+ * =========================
+ */
+
+// GET /api/admin/queues/dlq
+router.get("/queues/dlq", requireAdmin, logAdminAction("VIEW_DLQ"), dlqInspectorHandler);
+
+/**
+ * =========================
+ * CSV RECONCILIATION
+ * =========================
+ */
+
+// POST /api/admin/reconcile
+router.post(
+  "/reconcile",
+  requireAdmin,
+  logAdminAction("CSV_RECONCILIATION"),
+  csvUpload.single("csv") as any,
+  async (req: Request, res: Response) => {
+    try {
+      if (!req.file) {
+        return res.status(400).json({
+          error: "No file uploaded",
+          message: "Please upload a CSV file with field name 'csv'",
+        });
+      }
+
+      // Parse optional date range from query params
+      const dateRange = {
+        start: req.query.start_date as string | undefined,
+        end: req.query.end_date as string | undefined,
+      };
+
+      // Parse CSV
+      const providerRows = await parseCSV(req.file.buffer);
+
+      if (providerRows.length === 0) {
+        return res.status(400).json({
+          error: "Empty CSV",
+          message: "The uploaded CSV file contains no data rows",
+        });
+      }
+
+      // Perform reconciliation
+      const result = await reconcileTransactions(providerRows, dateRange);
+
+      // Log reconciliation summary
+      console.log("[CSV RECONCILIATION]", {
+        adminId: (req as AuthRequest).user?.id,
+        filename: req.file.originalname,
+        summary: result.summary,
+        timestamp: new Date().toISOString(),
+      });
+
+      res.json({
+        message: "Reconciliation completed successfully",
+        result,
+      });
+    } catch (error) {
+      console.error("[CSV RECONCILIATION ERROR]", error);
+
+      if (error instanceof Error) {
+        return res.status(500).json({
+          error: "Reconciliation failed",
+          message: error.message,
+        });
+      }
+
+      res.status(500).json({
+        error: "Reconciliation failed",
+        message: "An unexpected error occurred during reconciliation",
+      });
+    }
+  },
+);
+
 /**
  * =========================
  * HEALTH & MONITORING
@@ -502,6 +853,65 @@ router.get(
         timestamp: new Date().toISOString(),
       });
     }
+  },
+);
+
+/**
+ * =========================
+ * DATA EXPORT
+ * =========================
+ */
+
+// POST /api/admin/export/users
+router.post(
+  "/export/users",
+  requireAdmin,
+  rateLimitExport,
+  logAdminAction("EXPORT_USERS"),
+  (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+
+    const result = paginate(users, page, limit);
+
+    // Set export headers
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader("Content-Disposition", 'attachment; filename="users-export.json"');
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      exportedBy: (req as AuthRequest).user?.id,
+      dataType: "users",
+      ...result,
+    });
+  },
+);
+
+// POST /api/admin/export/transactions
+router.post(
+  "/export/transactions",
+  requireAdmin,
+  rateLimitExport,
+  logAdminAction("EXPORT_TRANSACTIONS"),
+  (req: Request, res: Response) => {
+    const page = Number(req.query.page) || 1;
+    const limit = Number(req.query.limit) || 10;
+
+    const result = paginate(transactions, page, limit);
+
+    // Set export headers
+    res.setHeader("Content-Type", "application/json");
+    res.setHeader(
+      "Content-Disposition",
+      'attachment; filename="transactions-export.json"',
+    );
+
+    res.json({
+      exportedAt: new Date().toISOString(),
+      exportedBy: (req as AuthRequest).user?.id,
+      dataType: "transactions",
+      ...result,
+    });
   },
 );
 
