@@ -97,7 +97,7 @@
     "pg-query-stream": "^4.10.3",
     "prom-client": "^15.1.3",
     "qrcode": "^1.5.3",
-    "redis": "^4.6.12",
+    "redis": "^5.11.0",
     "redlock": "^5.0.0-beta.2",
     "sharp": "^0.34.5",
     "spdy": "^4.0.2",
