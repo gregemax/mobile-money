@@ -1,8 +1,6 @@
 import "./tracer";
 import express, { NextFunction, Request, Response } from "express";
 import { IncomingMessage, Server } from "http";
-import cors from "cors";
-import helmet from "helmet";
 // replaced express-rate-limit with our redis-backed middleware
 import compression from "compression";
 import dotenv from "dotenv";
@@ -34,6 +32,8 @@ import { statsRoutes } from "./routes/stats";
 import { contactsRoutes } from "./routes/contacts";
 import { reportsRoutes } from "./routes/reports";
 import { statementsRoutes } from "./routes/statements";
+import feesRoutes from "./routes/fees";
+import stellarRoutes from "./routes/stellar";
 import { createKYCRoutes } from "./routes/kycRoutes";
 import { vaultRoutes } from "./routes/vaults";
 import { adminRoutes } from "./routes/admin";
@@ -47,8 +47,8 @@ import {
   createRedisStore,
   SESSION_TTL_SECONDS,
 } from "./config/redis";
-import { createCorsOptions } from "./config/cors";
 import { createOAuthRouter } from "./auth/oauth";
+import { applySecurityMiddleware } from "./config/express";
 import { pool } from "./config/database";
 import {
   globalTimeout,
@@ -64,12 +64,14 @@ import { validateStellarNetwork, logStellarNetwork } from "./config/stellar";
 import { sessionAnomalyLogger } from "./services/logger";
 import { HealthCheckResponse, ReadinessCheckResponse } from "./types/api";
 import { privacyRoutes } from "./routes/privacy";
+import { travelRuleRoutes } from "./routes/travelRule";
 import sep31Router from "./stellar/sep31";
 import sep24Router from "./stellar/sep24";
 import sep38Router from "./stellar/sep38";
 import { createSep12Router } from "./stellar/sep12";
 import { createSep10Router } from "./stellar/sep10";
 import tomlRouter from "./routes/toml";
+import { startJobs } from "./jobs/scheduler";
 
 // 1. Import Sentry Middleware
 import { initSentry, sentryBreadcrumbMiddleware } from "./middleware/sentry";
@@ -104,7 +106,7 @@ if (process.env.SENTRY_DSN) {
 app.use(sentryBreadcrumbMiddleware);
 
 app.use(metricsMiddleware);
-app.use(helmet());
+applySecurityMiddleware(app);
 
 if (process.env.COMPRESSION_ENABLED !== "false") {
   app.use(
@@ -132,7 +134,6 @@ if (process.env.COMPRESSION_ENABLED !== "false") {
   );
 }
 
-app.use(cors(createCorsOptions()));
 app.use(
   express.json({
     limit: process.env.REQUEST_SIZE_LIMIT || "10mb",
@@ -318,6 +319,7 @@ app.use("/api/v1/transactions/bulk", bulkRoutesV1);
 app.use("/api/v1/disputes", disputeRoutesV1);
 app.use("/api/v1/stats", statsRoutesV1);
 app.use("/api/v1/vaults", vaultRoutesV1);
+app.use("/api/v1/compliance/travel-rule", travelRuleRoutes);
 
 const deprecatedApiV1Handler: express.RequestHandler = (req, res, next) => {
   const versionedReq = req as VersionedRequest;
@@ -342,9 +344,11 @@ app.use("/api/disputes", disputeRoutes);
 app.use("/api/stats", statsRoutes);
 app.use("/api/contacts", contactsRoutes);
 app.use("/api/reports", reportsRoutes);
-app.use("/api/statements", statementsRoutes);
+app.use("/api/fees", feesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
+
+app.use("/api/stellar", stellarRoutes);
 
 // GDPR
 app.use("/api/gdpr", privacyRoutes);
@@ -354,7 +358,6 @@ app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
 app.use("/sep38", sep38Router);
 app.use("/sep12", createSep12Router(pool));
-app.use("/sep10", createSep10Router());
 app.use("/.well-known/stellar.toml", tomlRouter);
 
 app.use(
@@ -503,6 +506,9 @@ async function initializeRuntime(): Promise<void> {
 
   const { createQueueDashboard } = await import("./queue/dashboard");
   app.use("/admin/queues", createQueueDashboard());
+
+  // Start scheduled jobs
+  startJobs();
 
   //
   const useHTTP2 = process.env.USE_HTTP2 === "true";
