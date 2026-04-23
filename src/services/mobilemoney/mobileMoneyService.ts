@@ -8,6 +8,12 @@ import { executeWithCircuitBreaker } from "../../utils/circuitBreaker";
 import { pool } from "../../config/database";
 import { MonitoringService } from "../monitoringService";
 
+export type ProviderTransactionStatus =
+  | "completed"
+  | "failed"
+  | "pending"
+  | "unknown";
+
 interface MobileMoneyProvider {
   requestPayment(
     phoneNumber: string,
@@ -17,6 +23,9 @@ interface MobileMoneyProvider {
     phoneNumber: string,
     amount: string,
   ): Promise<{ success: boolean; data?: unknown; error?: unknown }>;
+  getTransactionStatus?(
+    referenceId: string,
+  ): Promise<{ status: ProviderTransactionStatus }>;
 }
 
 interface ProviderExecutionResult {
@@ -24,6 +33,7 @@ interface ProviderExecutionResult {
   provider?: string;
   data?: unknown;
   error?: unknown;
+  providerResponseTimeMs?: number;
 }
 
 class MobileMoneyError extends Error {
