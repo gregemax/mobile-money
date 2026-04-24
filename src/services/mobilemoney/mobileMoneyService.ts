@@ -282,7 +282,7 @@ export class MobileMoneyService {
     }
   }
 
-  async initiatePayment(provider: string, phoneNumber: string, amount: string) {
+  async initiatePayment(provider: string, phoneNumber: string, amount: string): Promise<ProviderExecutionResult> {
     const providerKey = provider.toLowerCase();
 
     const result = await this.executeProviderOperation(
@@ -310,7 +310,7 @@ export class MobileMoneyService {
     );
   }
 
-  async sendPayout(provider: string, phoneNumber: string, amount: string) {
+  async sendPayout(provider: string, phoneNumber: string, amount: string): Promise<ProviderExecutionResult> {
     const providerKey = provider.toLowerCase();
 
     const result = await this.executeProviderOperation(
