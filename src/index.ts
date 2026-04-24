@@ -1,4 +1,8 @@
+import path from "path";
+// Serve SEP-1 stellar.toml at /.well-known/stellar.toml
+app.use("/.well-known", express.static(path.join(__dirname, "../public/.well-known")));
 import "./tracer";
+
 import express, { NextFunction, Request, Response } from "express";
 import { IncomingMessage, Server } from "http";
 // replaced express-rate-limit with our redis-backed middleware
