@@ -4,7 +4,7 @@ import { IncomingMessage, Server } from "http";
 // replaced express-rate-limit with our redis-backed middleware
 import compression from "compression";
 import dotenv from "dotenv";
-import spdy from 'spdy';
+import spdy from "spdy";
 import https from "https";
 import fs from "fs";
 import path from "path";
@@ -37,8 +37,10 @@ import stellarRoutes from "./routes/stellar";
 import { createKYCRoutes } from "./routes/kycRoutes";
 import { vaultRoutes } from "./routes/vaults";
 import { adminRoutes } from "./routes/admin";
+import kycTierUpgradeRoutes from "./routes/kycTierUpgradeRoutes";
 import { makerCheckerRoutes } from "./routes/makerChecker";
 import { userRoutes } from "./routes/users";
+import { auditRoutes } from "./routes/audit";
 import { errorHandler } from "./middleware/errorHandler";
 import {
   connectRedis,
@@ -149,7 +151,7 @@ app.use(
     extended: true,
   }),
 );
-// app.use(rateLimitMiddleware); 
+// app.use(rateLimitMiddleware);
 app.use(responseTime);
 app.use(requestId);
 app.use(i18nMiddleware);
@@ -248,22 +250,23 @@ app.get("/ready", async (_req: Request, res: Response) => {
   res.status(allReady ? 200 : 503).json(body);
 });
 
-
 // Load Balancer Health Check
-let lbHealthCache: { data: any, timestamp: number } | null = null;
+let lbHealthCache: { data: any; timestamp: number } | null = null;
 const LB_HEALTH_CACHE_TTL = 5000;
 
 app.get("/health/lb", async (req: Request, res: Response) => {
   const now = Date.now();
-  if (lbHealthCache && (now - lbHealthCache.timestamp < LB_HEALTH_CACHE_TTL)) {
-    res.status(lbHealthCache.data.status === "ok" ? 200 : 503).json(lbHealthCache.data);
+  if (lbHealthCache && now - lbHealthCache.timestamp < LB_HEALTH_CACHE_TTL) {
+    res
+      .status(lbHealthCache.data.status === "ok" ? 200 : 503)
+      .json(lbHealthCache.data);
     return;
   }
 
   const checks: Record<string, string> = {
     database: "down",
     redis: "down",
-    memory: "ok"
+    memory: "ok",
   };
   let healthy = true;
 
@@ -291,7 +294,8 @@ app.get("/health/lb", async (req: Request, res: Response) => {
   }
 
   const memUsage = process.memoryUsage();
-  if (memUsage.heapUsed > 1024 * 1024 * 1024) { // 1GB limit
+  if (memUsage.heapUsed > 1024 * 1024 * 1024) {
+    // 1GB limit
     checks.memory = "high";
     healthy = false;
   }
@@ -299,7 +303,7 @@ app.get("/health/lb", async (req: Request, res: Response) => {
   const responseData = {
     status: healthy ? "ok" : "error",
     checks,
-    timestamp: new Date().toISOString()
+    timestamp: new Date().toISOString(),
   };
 
   lbHealthCache = { data: responseData, timestamp: now };
@@ -348,12 +352,15 @@ app.use("/api/reports", reportsRoutes);
 app.use("/api/fees", feesRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/kyc", createKYCRoutes(pool));
+app.use("/api/audit", auditRoutes);
 
+app.use("/api/accounting", accountingRoutes);
 app.use("/api/stellar", stellarRoutes);
 
 // GDPR
 app.use("/api/gdpr", privacyRoutes);
 app.use("/api/admin", requireAuth, adminRoutes);
+app.use("/api/admin/kyc-upgrades", requireAuth, kycTierUpgradeRoutes);
 app.use("/sep10", createSep10Router());
 app.use("/sep31", sep31Router);
 app.use("/sep24", sep24Router);
@@ -414,7 +421,9 @@ async function gracefulShutdown(signal: NodeJS.Signals): Promise<void> {
 
   try {
     if (server) {
-      console.log("[Shutdown] Stopping HTTP server from accepting new requests");
+      console.log(
+        "[Shutdown] Stopping HTTP server from accepting new requests",
+      );
       await new Promise<void>((resolve, reject) => {
         server?.close((error) => {
           if (error) {

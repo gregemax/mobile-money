@@ -11,6 +11,7 @@ import { MonitoringService } from "../services/monitoringService";
 import { createPagerDutyService } from "../services/pagerDutyService";
 import { runProviderBalanceAlertJob } from "./balances";
 import { runProviderHealthCheckJob } from "./providerHealthCheck";
+import { runKycTierUpgradeJob } from "./kycTierUpgradeJob";
 
 interface JobConfig {
   name: string;
@@ -72,6 +73,12 @@ const JOBS: JobConfig[] = [
     // Every 5 minutes - polls provider APIs for uptime and alerts on outages
     schedule: process.env.PROVIDER_HEALTH_CHECK_CRON || "*/5 * * * *",
     handler: runProviderHealthCheckJob,
+  },
+  {
+    name: "kyc-tier-upgrade",
+    // Every hour - flags users at 80% of their KYC daily limit and notifies them
+    schedule: process.env.KYC_TIER_UPGRADE_CRON || "0 * * * *",
+    handler: runKycTierUpgradeJob,
   },
 ];
 
