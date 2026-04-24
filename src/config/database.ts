@@ -132,11 +132,11 @@ class SlowQueryPool extends Pool {
  * (INSERT, UPDATE, DELETE) and read operations when no replica is available.
  */
 export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  max: 20,
-  idleTimeoutMillis: 30000,
-  connectionTimeoutMillis: 2000,
-});
+    connectionString: process.env.DATABASE_URL,
+    max: 1000,
+    idleTimeoutMillis: 30000,
+    connectionTimeoutMillis: 500,
+  });
 
 // Wrap query for slow-query logging while preserving Pool typings.
 const originalPoolQuery = pool.query.bind(pool);
@@ -183,15 +183,15 @@ const replicaUrls: string[] = process.env.READ_REPLICA_URL
   : [];
 
 // Build an individual Pool for each replica URL
-const replicaPools: Pool[] = replicaUrls.map(
-  (url) =>
-    new Pool({
-      connectionString: url,
-      max: 10,
-      idleTimeoutMillis: 30000,
-      connectionTimeoutMillis: 2000,
-    }),
-);
+  const replicaPools: Pool[] = replicaUrls.map(
+    (url) =>
+      new Pool({
+        connectionString: url,
+        max: 50,
+        idleTimeoutMillis: 30000,
+        connectionTimeoutMillis: 500,
+      }),
+  );
 
 // Track which replica to use next for round-robin load balancing
 let replicaIndex = 0;

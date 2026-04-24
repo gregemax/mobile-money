@@ -1045,7 +1045,11 @@ router.get(
   .chart-box h2{font-size:.9rem;color:#94a3b8;margin-bottom:16px;font-weight:500}
   #status{font-size:.75rem;color:#64748b;margin-top:14px;text-align:right}
   .error{color:#f87171;padding:20px;background:#1e293b;border-radius:10px}
-</style>
+  .copy-icon{cursor:pointer;color:#60a5fa;opacity:0.6;transition:opacity .2s}
+  .copy-icon:hover{opacity:1}
+  .toast{position:fixed;bottom:80px;left:50%;transform:translateX(-50%);background:#34d399;color:#0f172a;padding:10px 20px;border-radius:6px;font-weight:600;font-size:.85rem;z-index:1000;opacity:0;transition:opacity .3s}
+  .toast.show{opacity:1}
+ </style>
 </head>
 <body>
 <h1>Financial Health — Last 30 Days</h1>
@@ -1080,7 +1084,8 @@ router.get(
     <div id="txEmpty" style="color:#64748b;text-align:center;padding:20px;">Enter a reference number to search</div>
   </div>
 </div>
-<div id="status"></div>
+ <div id="toast" class="toast">Copied!</div>
+ <div id="status"></div>
 <script>
 const fmt = (n) => '$' + n.toLocaleString('en-US', {minimumFractionDigits:2, maximumFractionDigits:2});
 
@@ -1123,7 +1128,17 @@ async function load() {
   }
 }
 
-async function searchTx() {
+function copyRef(ref) {
+   navigator.clipboard.writeText(ref).then(() => {
+     const toast = document.getElementById('toast');
+     toast.classList.add('show');
+     setTimeout(() => toast.classList.remove('show'), 2000);
+   }).catch(err => {
+     console.error('Failed to copy:', err);
+   });
+ }
+
+ async function searchTx() {
   const ref = document.getElementById('txSearch').value.trim();
   if (!ref) return;
   
@@ -1156,13 +1171,16 @@ async function searchTx() {
                          tx.status === 'pending' ? '#fbbf24' : 
                          tx.status === 'failed' ? '#f87171' : '#94a3b8';
       
-      tr.innerHTML = \`
-        <td style="padding:12px 4px;font-family:monospace;color:#60a5fa">\${tx.referenceNumber}</td>
-        <td style="padding:12px 4px;text-transform:capitalize;">\${tx.type}</td>
-        <td style="padding:12px 4px;font-weight:600;">\${tx.amount}</td>
-        <td style="padding:12px 4px;"><span style="padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;background:\${statusBg};color:\${statusColor}">\${tx.status.toUpperCase()}</span></td>
-        <td style="padding:12px 4px;color:#64748b">\${new Date(tx.createdAt).toLocaleDateString()}</td>
-      \`;
+       tr.innerHTML = \`
+         <td style="padding:12px 4px;font-family:monospace;color:#60a5fa">
+           <span class="ref-text">\${tx.referenceNumber}</span>
+           <span class="copy-icon" title="Copy reference" onclick="copyRef('\${tx.referenceNumber}')" style="margin-left:8px">📋</span>
+         </td>
+         <td style="padding:12px 4px;text-transform:capitalize;">\${tx.type}</td>
+         <td style="padding:12px 4px;font-weight:600;">\${tx.amount}</td>
+         <td style="padding:12px 4px;"><span style="padding:2px 8px;border-radius:4px;font-size:0.7rem;font-weight:600;background:\${statusBg};color:\${statusColor}">\${tx.status.toUpperCase()}</span></td>
+         <td style="padding:12px 4px;color:#64748b">\${new Date(tx.createdAt).toLocaleDateString()}</td>
+       \`;
       body.appendChild(tr);
     });
     
