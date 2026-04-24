@@ -40,6 +40,7 @@ class MobileMoneyError extends Error {
   constructor(
     public code: string,
     message: string,
+    public originalError?: unknown
   ) {
     super(message);
     this.name = "MobileMoneyError";
@@ -250,6 +251,7 @@ export class MobileMoneyService {
           error,
           allowFailover ? "primary" : "backup",
         ),
+        error
       );
     }
   }
@@ -272,12 +274,13 @@ export class MobileMoneyService {
         status: "success",
       });
 
-      return { success: true, data: result.data };
+      return { success: true as const, data: result.data, providerResponseTimeMs: result.providerResponseTimeMs };
     }
 
     throw new MobileMoneyError(
       "PROVIDER_ERROR",
       `Payment failed for provider '${providerKey}'`,
+      result.error
     );
   }
 
@@ -299,12 +302,13 @@ export class MobileMoneyService {
         status: "success",
       });
 
-      return { success: true, data: result.data };
+      return { success: true as const, data: result.data, providerResponseTimeMs: result.providerResponseTimeMs };
     }
 
     throw new MobileMoneyError(
       "PROVIDER_ERROR",
       `Payout failed for provider '${providerKey}'`,
+      result.error
     );
   }
 
