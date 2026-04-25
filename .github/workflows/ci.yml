@@ -266,3 +266,34 @@ jobs:
             echo "  - ${{ github.repository }}:latest"
           fi
           echo "=================================="
+
+  # Slack failure notification — fires only when a job fails on the main branch.
+  # Requires the SLACK_WEBHOOK_URL repository secret (see CONTRIBUTING.md).
+  notify-slack:
+    runs-on: ubuntu-latest
+    needs: [security, test, build, docker]
+    # Always run this job so it can evaluate the failure condition,
+    # but only send a notification when something upstream failed on main.
+    if: |
+      always() &&
+      github.ref == 'refs/heads/main' &&
+      contains(needs.*.result, 'failure')
+    steps:
+      - name: Send Slack failure notification
+        uses: slackapi/slack-github-action@v2
+        with:
+          webhook: ${{ secrets.SLACK_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            {
+              "text": ":x: CI Failed on `main`",
+              "blocks": [
+                {
+                  "type": "section",
+                  "text": {
+                    "type": "mrkdwn",
+                    "text": ":x: *CI Failed on `main`*\n*Workflow:* ${{ github.workflow }}\n*Triggered by:* ${{ github.actor }}\n*Commit:* `${{ github.sha }}`\n*<${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|View failed run>*"
+                  }
+                }
+              ]
+            }
