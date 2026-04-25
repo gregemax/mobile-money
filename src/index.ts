@@ -1,5 +1,8 @@
-import "./tracer";
+// Initialize centralized configuration first
+import './config/init';
 
+import "./tracer";
+import path from "path";
 import express, { NextFunction, Request, Response } from "express";
 import { IncomingMessage, Server } from "http";
 // replaced express-rate-limit with our redis-backed middleware
@@ -8,7 +11,6 @@ import dotenv from "dotenv";
 import spdy from "spdy";
 import https from "https";
 import fs from "fs";
-import path from "path";
 import session from "express-session";
 import * as Sentry from "@sentry/node";
 import { register } from "prom-client";
@@ -55,7 +57,7 @@ import {
 } from "./config/redis";
 import { createOAuthRouter } from "./auth/oauth";
 import { applySecurityMiddleware } from "./config/express";
-import { pool } from "./config/database";
+import { pool, checkDRHealth, isDRMode } from "./config/database";
 import {
   globalTimeout,
   haltOnTimedout,
@@ -73,6 +75,7 @@ import { privacyRoutes } from "./routes/privacy";
 import { developerDashboardRoutes } from "./routes/developerDashboard";
 import { travelRuleRoutes } from "./routes/travelRule";
 import sep31Router from "./stellar/sep31";
+import { rateLimitMiddleware } from "./middleware/rateLimitRedis";
 import sep24Router from "./stellar/sep24";
 import sep38Router from "./stellar/sep38";
 import { createSep12Router } from "./stellar/sep12";
@@ -247,6 +250,13 @@ app.get("/ready", async (_req: Request, res: Response) => {
   } catch (err) {
     console.error("Redis check failed", err);
     allReady = false;
+  }
+
+  // DR replica health (informational — does not affect readiness)
+  const drHealth = await checkDRHealth();
+  if (drHealth !== null) {
+    checks.dr_replica = drHealth.healthy ? "ok" : "degraded";
+    checks.dr_mode = isDRMode() ? "active" : "standby";
   }
 
   const body: ReadinessCheckResponse = {

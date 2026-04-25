@@ -15,6 +15,7 @@ export enum TransactionStatus {
   Completed = "completed",
   Failed = "failed",
   Cancelled = "cancelled",
+  Review = "review",
 }
 
 const MAX_TAGS = 10;
@@ -305,7 +306,6 @@ export class TransactionModel {
       referenceNumber?: string;
       tags?: string[];
     },
-    cursor?: { before?: string; after?: string },
   ) {
     const capped = Math.min(Math.max(limit, 1), 100);
     const off = Math.max(offset, 0);
@@ -349,49 +349,8 @@ export class TransactionModel {
       params.push(filters.tags);
     }
 
-    // Cursor-based pagination (keyset) using (created_at, id)
-    // Cursor format: base64("<createdAt ISO>|<id>")
-    const cursorBefore = cursor?.before;
-    const cursorAfter = cursor?.after;
-
-    if (cursorBefore && cursorAfter) {
-      throw new Error("Provide only one of 'before' or 'after' cursor");
-    }
-
-    if (cursorAfter) {
-      // after -> fetch records older than the cursor (next page)
-      try {
-        const decoded = Buffer.from(cursorAfter, "base64").toString("utf8");
-        const [createdAtStr, id] = decoded.split("|");
-        query += ` AND (created_at, id) < ($${p}::timestamptz, $${p + 1}::uuid)`;
-        params.push(new Date(createdAtStr).toISOString(), id);
-        p += 2;
-      } catch (err) {
-        throw new Error("Invalid 'after' cursor");
-      }
-
-      query += " ORDER BY created_at DESC, id DESC LIMIT $" + p++;
-      params.push(capped);
-    } else if (cursorBefore) {
-      // before -> fetch records newer than the cursor (previous page)
-      try {
-        const decoded = Buffer.from(cursorBefore, "base64").toString("utf8");
-        const [createdAtStr, id] = decoded.split("|");
-        query += ` AND (created_at, id) > ($${p}::timestamptz, $${p + 1}::uuid)`;
-        params.push(new Date(createdAtStr).toISOString(), id);
-        p += 2;
-      } catch (err) {
-        throw new Error("Invalid 'before' cursor");
-      }
-
-      // To get the correct order for newer-than cursor, fetch ascending then reverse in caller
-      query += " ORDER BY created_at ASC, id ASC LIMIT $" + p++;
-      params.push(capped);
-    } else {
-      // legacy offset pagination
-      query += " ORDER BY created_at DESC, id DESC LIMIT $" + p++ + " OFFSET $" + p++;
-      params.push(capped, off);
-    }
+    query += " ORDER BY created_at DESC LIMIT $" + p++ + " OFFSET $" + p++;
+    params.push(capped, off);
 
     const result = await queryRead(query, params);
     return result.rows
@@ -898,20 +857,5 @@ export class TransactionModel {
     return result.rows
       .map((r) => mapTransactionRow(r))
       .filter((t): t is Transaction => t !== null);
-  }
-
-  async getBalanceStatistics(userId: string): Promise<{ total_deposited: string; total_withdrawn: string; current_balance: string }> {
-    const result = await queryRead(
-      `SELECT 
-         COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0)::text as total_deposited,
-         COALESCE(SUM(amount) FILTER (WHERE type = 'withdraw'), 0)::text as total_withdrawn,
-         (COALESCE(SUM(amount) FILTER (WHERE type = 'deposit'), 0) - 
-          COALESCE(SUM(amount) FILTER (WHERE type = 'withdraw'), 0))::text as current_balance
-       FROM transactions
-       WHERE user_id = $1 AND status = 'completed'`,
-      [userId]
-    );
-
-    return result.rows[0];
   }
 }
