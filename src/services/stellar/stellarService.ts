@@ -25,6 +25,7 @@ export interface TransactionHistoryResult {
 export class StellarService {
   private server: StellarSdk.Horizon.Server;
   private issuerKeypair: StellarSdk.Keypair | null = null;
+  private feePayerKeypair: StellarSdk.Keypair | null = null;
   private isMockMode: boolean = false;
   private assetService = new AssetService();
 
@@ -39,6 +40,7 @@ export class StellarService {
     this.server = getStellarServer();
 
     const secret = process.env.STELLAR_ISSUER_SECRET?.trim();
+    const feePayerSecret = process.env.STELLAR_FEE_PAYER_SECRET?.trim();
 
     if (!secret) {
       console.warn("STELLAR_ISSUER_SECRET not set - running in MOCK mode");
@@ -54,6 +56,63 @@ export class StellarService {
         this.isMockMode = true;
       }
     }
+
+    if (feePayerSecret) {
+      try {
+        this.feePayerKeypair = StellarSdk.Keypair.fromSecret(feePayerSecret);
+        console.log(
+          `[StellarService] Fee payer initialized: ${this.feePayerKeypair.publicKey()}`,
+        );
+      } catch (err) {
+        console.warn(
+          "STELLAR_FEE_PAYER_SECRET invalid",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  /**
+   * Submits a transaction wrapped in a FeeBumpTransaction.
+   * This allows the fee payer account to cover network fees for the transaction.
+   *
+   * @param innerTx - The already signed inner transaction
+   * @returns Submission response
+   */
+  async submitFeeBumpTransaction(
+    innerTx: StellarSdk.Transaction,
+  ): Promise<StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse> {
+    if (this.isMockMode || !this.feePayerKeypair) {
+      console.log("Mock Stellar fee-bump submission");
+      // Return a minimal mock response
+      return {
+        hash: "mock_feebump_hash_" + Math.random().toString(36).substring(7),
+        ledger: 12345,
+        successful: true,
+      } as any;
+    }
+
+    try {
+      const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
+        this.feePayerKeypair,
+        (parseInt(innerTx.fee) + StellarSdk.BASE_FEE).toString(),
+        innerTx,
+        getNetworkPassphrase(),
+      );
+
+      feeBumpTx.sign(this.feePayerKeypair);
+      const response = await this.server.submitTransaction(feeBumpTx);
+
+      console.log("Stellar fee-bump payment successful", {
+        hash: response.hash,
+        innerHash: innerTx.hash(),
+      });
+
+      return response;
+    } catch (error) {
+      console.error("Stellar fee-bump submission failed:", error);
+      throw error;
+    }
   }
 
   async sendPayment(
@@ -61,6 +120,7 @@ export class StellarService {
     amount: string,
     senderName?: string,
     receiverName?: string,
+    useFeeBump?: boolean,
   ): Promise<{
     hash?: string;
     submittedAt?: Date;
@@ -120,8 +180,14 @@ export class StellarService {
         .build();
 
       transaction.sign(this.issuerKeypair);
-      const response: StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse =
-        await this.server.submitTransaction(transaction);
+
+      // Check if fee bumping is requested
+      let response: StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse;
+      if (useFeeBump) {
+        response = await this.submitFeeBumpTransaction(transaction);
+      } else {
+        response = await this.server.submitTransaction(transaction);
+      }
 
       console.log("Stellar payment successful", {
         hash: response.hash,
