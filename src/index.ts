@@ -74,6 +74,7 @@ import { i18nMiddleware } from "./utils/i18n";
 import { metricsMiddleware } from "./middleware/metrics";
 import { validateStellarNetwork, logStellarNetwork } from "./config/stellar";
 import { sessionAnomalyLogger } from "./services/logger";
+import logger from "./utils/logger";
 import { HealthCheckResponse, ReadinessCheckResponse } from "./types/api";
 import { privacyRoutes } from "./routes/privacy";
 import { developerDashboardRoutes } from "./routes/developerDashboard";
@@ -583,15 +584,15 @@ async function initializeRuntime(): Promise<void> {
     server = http2Server as unknown as Server;
   } else {
     server = app.listen(PORT, () =>
-      console.log(`HTTP/1.1 server running on http://localhost:${PORT}`),
+      logger.info(`HTTP/1.1 server running on http://localhost:${PORT}`),
     );
 
     wsManager = new WebSocketManager(server);
-    console.log("WebSocket server attached");
+    logger.info("WebSocket server attached");
 
     // Start Apollo Server with APQ enabled (must run after HTTP server is created)
     await startApolloServer(app, server);
-    console.log("Apollo GraphQL server started at /graphql");
+    logger.info("Apollo GraphQL server started at /graphql");
   }
 }
 
