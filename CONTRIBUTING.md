@@ -131,12 +131,20 @@ npm test -- path/to/test.ts
 
 # Run with coverage
 npm run test:coverage
+
+# Run Pact contract tests
+npm run test:pact
 ```
 
 **Test Coverage Requirements:**
 - Minimum 70% coverage for all metrics
 - New features must have >80% coverage
 - Bug fixes must include regression tests
+
+**Contract Testing:**
+- Provider API changes require updating Pact contracts
+- Run `npm run test:pact` to verify contracts
+- See `tests/pact/README.md` for details
 
 ### Code Review Checklist
 

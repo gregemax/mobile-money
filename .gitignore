@@ -13,6 +13,10 @@ coverage/
 *.tsbuildinfo
 stryker-tmp/
 
+# Pact
+pact.log
+*.pact.log
+
 .kiro/
 
 # Issue creation and update scripts (local use only)

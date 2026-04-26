@@ -4,6 +4,7 @@ module.exports = {
   setupFiles: ["<rootDir>/tests/jest.setup.ts"],
   roots: ["<rootDir>/src", "<rootDir>/tests"],
   testMatch: ["**/__tests__/**/*.ts", "**/?(*.)+(spec|test).ts"],
+  testPathIgnorePatterns: ["/node_modules/", "/tests/pact/"],
   transform: {
     "^.+\\.ts$": [
       "ts-jest",
