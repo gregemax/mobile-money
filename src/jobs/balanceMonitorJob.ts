@@ -104,8 +104,7 @@ async function checkBalancesAndAlert(): Promise<void> {
   }
 
   if (thresholds.length === 0) {
-    console.log("[balance-monitor] No balance thresholds configured");
-    return;
+    console.log("[balance-monitor] No balance thresholds configured; checking reserve-only alerts");
   }
 
   console.log(`[balance-monitor] Checking ${wallets.length} wallets for ${thresholds.length} thresholds`);
