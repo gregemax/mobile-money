@@ -3,6 +3,7 @@ import { verifyOAuthAccessToken } from "../auth/oauth";
 import { verifyToken, JWTPayload } from "../auth/jwt";
 import { ADMIN_API_KEY } from "../config/env";
 import { redisClient } from "../config/redis";
+import { getAdminSep10Service } from "../stellar/adminSep10";
 
 type RequestUser = {
   id: string;
@@ -69,8 +70,7 @@ declare module "express-serve-static-core" {
 }
 
 /**
- * Middleware to require a valid administrative API key or token.
- * For this implementation, we check for an X-API-Key header.
+ * Middleware to require a valid administrative API key, OAuth token, or admin SEP-10 token.
  */
 export const requireAuth = (
   req: Request,
@@ -95,6 +95,7 @@ export const requireAuth = (
   const bearerToken = authorization?.match(/^Bearer\s+(.+)$/i)?.[1];
 
   if (bearerToken) {
+    // First try OAuth token
     try {
       const claims = verifyOAuthAccessToken(bearerToken);
       (req as AuthRequest).user = {
@@ -106,16 +107,34 @@ export const requireAuth = (
 
       return next();
     } catch {
-      return res.status(401).json({
-        error: "Unauthorized",
-        message: "Invalid or expired bearer token",
-      });
+      // If OAuth fails, try admin SEP-10 token
+      try {
+        const adminSep10Service = getAdminSep10Service();
+        const decoded = adminSep10Service.verifyToken(bearerToken);
+
+        // Verify this is an admin token (should have isAdmin flag, but we'll check the key)
+        if (decoded.sub) {
+          (req as AuthRequest).user = {
+            id: decoded.sub, // Stellar public key
+            role: "admin",
+            stellarPublicKey: decoded.sub,
+          };
+          return next();
+        }
+      } catch {
+        // SEP-10 verification also failed
+      }
     }
+
+    return res.status(401).json({
+      error: "Unauthorized",
+      message: "Invalid or expired bearer token",
+    });
   }
 
   return res.status(401).json({
     error: "Unauthorized",
-    message: "Valid administrative API key or OAuth bearer token required",
+    message: "Valid administrative API key or bearer token required",
   });
 };
 
