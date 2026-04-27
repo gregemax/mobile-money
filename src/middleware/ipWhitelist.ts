@@ -44,7 +44,6 @@ const isIpAllowed = (rawIp: string): boolean => {
   }
 };
 
-export const ipWhitelist = (
 // Haversine formula to calculate distance between two coordinates in km
 function calculateDistanceKm(lat1: number, lon1: number, lat2: number, lon2: number): number {
   const R = 6371; // Earth's radius in km
@@ -64,15 +63,10 @@ export const ipWhitelist = async (
   req: Request,
   res: Response,
   next: NextFunction,
-): void => {
-  const clientIp = resolveClientIp(req);
 ): Promise<void> => {
   try {
     const clientIp = resolveClientIp(req);
 
-  if (!clientIp || !isIpAllowed(clientIp)) {
-    res.status(403).json({ error: "Forbidden" });
-    return;
     if (!clientIp) {
       res.status(403).json({ error: "Forbidden", message: "Client IP required" });
       return;
@@ -129,6 +123,4 @@ export const ipWhitelist = async (
     console.error("[GEOFENCE] Error in IP Whitelist/Geofence middleware:", error);
     res.status(500).json({ error: "Internal Server Error" });
   }
-
-  next();
 };
