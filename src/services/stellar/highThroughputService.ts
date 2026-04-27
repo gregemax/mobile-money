@@ -226,9 +226,60 @@ export async function submitPayment(
  * This is the most efficient method for bulk payment processing
  */
 export async function submitBatchPayments(
-  payments: PaymentOptions[]
+  payments: PaymentOptions[],
+  options?: { dryRun?: boolean }
 ): Promise<BatchPaymentResult> {
   const startTime = Date.now();
+  const isDryRun = options?.dryRun === true;
+
+  if (isDryRun) {
+    const results = payments.map((payment, index) => {
+      let success = true;
+      let error: string | undefined;
+
+      try {
+        if (!payment.sourceAccount || !payment.destination || !payment.amount || !payment.sourceSecret) {
+          throw new Error("Missing required fields");
+        }
+
+        // Validate source secret and public keys
+        StellarSdk.Keypair.fromSecret(payment.sourceSecret);
+        StellarSdk.Keypair.fromPublicKey(payment.sourceAccount);
+        StellarSdk.Keypair.fromPublicKey(payment.destination);
+
+        // Validate asset if not native
+        if (payment.asset !== "native") {
+          if (!payment.asset.code || !payment.asset.issuer) {
+            throw new Error("Invalid custom asset configuration");
+          }
+          StellarSdk.Keypair.fromPublicKey(payment.asset.issuer);
+        }
+
+        // Validate amount
+        const amountNum = parseFloat(payment.amount);
+        if (isNaN(amountNum) || amountNum <= 0) {
+          throw new Error("Invalid amount");
+        }
+      } catch (err) {
+        success = false;
+        error = err instanceof Error ? err.message : String(err);
+      }
+
+      return {
+        index,
+        success,
+        hash: success ? `dry_run_${Date.now()}_${index}` : undefined,
+        error,
+      };
+    });
+
+    return {
+      successful: results.filter((r) => r.success).length,
+      failed: results.filter((r) => !r.success).length,
+      results,
+      totalTimeMs: Date.now() - startTime,
+    };
+  }
 
   if (!pool) {
     // Fallback to sequential submission
