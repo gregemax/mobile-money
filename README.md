@@ -1,7 +1,8 @@
 # Mobile Money to Stellar Bridge
 
 [![CI](https://github.com/sublime247/mobile-money/actions/workflows/ci.yml/badge.svg)](https://github.com/sublime247/mobile-money/actions/workflows/ci.yml)
-[![Coverage](https://codecov.io/gh/sublime247/mobile-money/branch/main/graph/badge.svg)](https://codecov.io/gh/sublime247/mobile-money)
+[![codecov](https://codecov.io/gh/sublime247/mobile-money/branch/main/graph/badge.svg)](https://codecov.io/gh/sublime247/mobile-money)
+[![Coverage Status](https://codecov.io/gh/sublime247/mobile-money/coverage.svg?branch=main)](https://codecov.io/gh/sublime247/mobile-money?branch=main)
 [![Contributions Welcome](https://img.shields.io/badge/contributions-welcome-brightgreen.svg?style=flat)](https://github.com/sublime247/mobile-money/issues)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 
@@ -186,6 +187,19 @@ docker-compose up -d
 
 ## 🧪 Testing
 
+### Why Test Coverage Matters
+
+High test coverage is **critical for financial systems** like this mobile money bridge:
+
+- **🚨 Prevents Financial Loss**: Uncovered code can hide bugs that lead to incorrect transactions, lost funds, or security vulnerabilities
+- **🔒 Security Assurance**: Tests verify that security-critical paths (authentication, authorization, transaction validation) work correctly
+- **📈 Confidence in Changes**: When refactoring payment logic or adding features, tests ensure we don't break existing functionality
+- **🐛 Faster Debugging**: Well-tested code makes it easier to isolate and fix issues when they occur
+- **📊 Compliance Requirements**: Financial systems often require minimum test coverage for regulatory compliance
+- **👥 Team Productivity**: Tests act as living documentation and reduce the fear of making changes
+
+**Our coverage thresholds are intentionally set conservatively** to ensure we maintain quality while allowing for rapid development. We continuously work to increase these thresholds as the codebase matures.
+
 ### Run All Tests
 
 ```bash
@@ -198,7 +212,15 @@ npm test
 npm run test:coverage
 ```
 
-Minimum coverage requirements: 70% (branches, functions, lines, statements)
+**Current minimum coverage requirements:**
+- Statements: 20%
+- Branches: 15%
+- Functions: 25%
+- Lines: 20%
+
+> **Coverage Goals**: We aim to increase these thresholds to 80%+ as the codebase matures. High coverage ensures the reliability of our financial transaction processing and protects against regressions in critical payment flows.
+
+> Coverage reports are automatically uploaded to [Codecov](https://codecov.io/gh/sublime247/mobile-money) on every push to main branch.
 
 ### Watch Mode
 
