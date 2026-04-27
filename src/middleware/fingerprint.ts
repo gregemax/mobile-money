@@ -9,11 +9,11 @@ declare module "express-serve-static-core" {
 
 // Utility to extract fingerprint from headers/params
 export function extractFingerprint(req: Request): string {
-  // Example: combine user-agent, IP, and custom header
+  // Combine user-agent, accept-language, and custom device header
   const userAgent = req.headers["user-agent"] || "";
-  const ip = req.ip || req.connection.remoteAddress || "";
+  const acceptLanguage = req.headers["accept-language"] || "";
   const deviceId = req.headers["x-device-id"] || req.query.deviceId || "";
-  return `${userAgent}|${ip}|${deviceId}`;
+  return `${userAgent}|${acceptLanguage}|${deviceId}`;
 }
 
 // Middleware to collect and compare device fingerprints
