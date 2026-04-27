@@ -1,6 +1,6 @@
 import convict from 'convict';
-import path from 'path';
-import fs from 'fs';
+import * as path from 'path';
+import * as fs from 'fs';
 
 /**
  * Centralized application configuration using Convict.
@@ -52,6 +52,18 @@ export const configSchema = convict({
         format: 'nat',
         default: 500000,
         env: 'MTN_MAX_AMOUNT',
+      },
+      callbackSecret: {
+        doc: 'MTN callback HMAC secret for verifying incoming callbacks',
+        format: String,
+        default: '',
+        env: 'MTN_CALLBACK_SECRET',
+      },
+      callbackSignatureHeader: {
+        doc: 'Header used by MTN for callback signature verification',
+        format: String,
+        default: 'X-Callback-Signature',
+        env: 'MTN_CALLBACK_SIGNATURE_HEADER',
       },
     },
     airtel: {

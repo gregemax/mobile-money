@@ -1,7 +1,8 @@
 import { Router, Request, Response } from "express";
 import { rateLimitExport as exportRateLimiter } from "../middleware/rateLimit";
 import QueryStream from "pg-query-stream";
-import { pipeline, Transform } from "stream";
+import { pipeline } from "node:stream/promises";
+import { Transform } from "node:stream";
 import ExcelJS from "exceljs";
 import { pool } from "../config/database";
 import { requireAuth } from "../middleware/auth";
@@ -306,13 +307,6 @@ export function createExportRoutes(
       let client: QueryableClient | null = null;
       let released = false;
 
-      const releaseClient = () => {
-        if (client && !released) {
-          released = true;
-          client.release();
-        }
-      };
-
     const releaseClient = () => {
       if (client && !released) {
         released = true;
@@ -368,49 +362,11 @@ export function createExportRoutes(
         if ("destroy" in rowStream && typeof rowStream.destroy === "function") {
           rowStream.destroy();
         }
-        const { text, values } = buildTransactionExportQuery(filters);
+        releaseClient();
+      });
 
-        client = await db.connect();
-        const queryStream = createQueryStream(text, values);
-        const rowStream = client.query(queryStream);
-
-        const filename = `transactions-${new Date().toISOString().slice(0, 10)}.csv`;
-        res.status(200);
-        res.setHeader("Content-Type", "text/csv; charset=utf-8");
-        res.setHeader(
-          "Content-Disposition",
-          `attachment; filename="${filename}"`,
-        );
-        res.write(`${CSV_HEADERS.join(",")}\n`);
-
-        const csvTransform = new Transform({
-          objectMode: true,
-          transform(chunk: Record<string, unknown>, _encoding, callback) {
-            callback(null, transactionRowToCsv(chunk));
-          },
-        });
-
-        res.on("close", () => {
-          if (
-            "destroy" in rowStream &&
-            typeof rowStream.destroy === "function"
-          ) {
-            rowStream.destroy();
-          }
-          releaseClient();
-        });
-
-      pipeline(
-        rowStream,
-        transform,
-        res,
-        (error) => {
-          releaseClient();
-          if (error) {
-            console.error("Transaction CSV export failed:", error);
-          }
-        },
-      );
+      await pipeline(rowStream, transform, res);
+      releaseClient();
     } catch (error) {
       releaseClient();
       const message =

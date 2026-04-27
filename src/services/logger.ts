@@ -82,6 +82,24 @@ export function logSessionAnomaly(
   logger.warn(JSON.stringify(event));
 }
 
+export interface SecurityAnomalyAuditEvent {
+  event: "security.anomaly";
+  timestamp: string;
+  path: string;
+  method: string;
+  ip?: string | null;
+  reason: string;
+  provider: string;
+  headerPresent: boolean;
+}
+
+export function logSecurityAnomaly(
+  event: SecurityAnomalyAuditEvent,
+  logger: Pick<Console, "warn"> = console,
+): void {
+  logger.warn(JSON.stringify(event));
+}
+
 export function sessionAnomalyLogger(
   req: Request,
   _res: Response,
