@@ -25,6 +25,7 @@ export interface TransactionHistoryResult {
 export class StellarService {
   private server: StellarSdk.Horizon.Server;
   private issuerKeypair: StellarSdk.Keypair | null = null;
+  private feePayerKeypair: StellarSdk.Keypair | null = null;
   private isMockMode: boolean = false;
   private assetService = new AssetService();
 
@@ -39,6 +40,7 @@ export class StellarService {
     this.server = getStellarServer();
 
     const secret = process.env.STELLAR_ISSUER_SECRET?.trim();
+    const feePayerSecret = process.env.STELLAR_FEE_PAYER_SECRET?.trim();
 
     if (!secret) {
       console.warn("STELLAR_ISSUER_SECRET not set - running in MOCK mode");
@@ -54,6 +56,63 @@ export class StellarService {
         this.isMockMode = true;
       }
     }
+
+    if (feePayerSecret) {
+      try {
+        this.feePayerKeypair = StellarSdk.Keypair.fromSecret(feePayerSecret);
+        console.log(
+          `[StellarService] Fee payer initialized: ${this.feePayerKeypair.publicKey()}`,
+        );
+      } catch (err) {
+        console.warn(
+          "STELLAR_FEE_PAYER_SECRET invalid",
+          err instanceof Error ? err.message : err,
+        );
+      }
+    }
+  }
+
+  /**
+   * Submits a transaction wrapped in a FeeBumpTransaction.
+   * This allows the fee payer account to cover network fees for the transaction.
+   *
+   * @param innerTx - The already signed inner transaction
+   * @returns Submission response
+   */
+  async submitFeeBumpTransaction(
+    innerTx: StellarSdk.Transaction,
+  ): Promise<StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse> {
+    if (this.isMockMode || !this.feePayerKeypair) {
+      console.log("Mock Stellar fee-bump submission");
+      // Return a minimal mock response
+      return {
+        hash: "mock_feebump_hash_" + Math.random().toString(36).substring(7),
+        ledger: 12345,
+        successful: true,
+      } as any;
+    }
+
+    try {
+      const feeBumpTx = StellarSdk.TransactionBuilder.buildFeeBumpTransaction(
+        this.feePayerKeypair,
+        (parseInt(innerTx.fee) + StellarSdk.BASE_FEE).toString(),
+        innerTx,
+        getNetworkPassphrase(),
+      );
+
+      feeBumpTx.sign(this.feePayerKeypair);
+      const response = await this.server.submitTransaction(feeBumpTx);
+
+      console.log("Stellar fee-bump payment successful", {
+        hash: response.hash,
+        innerHash: innerTx.hash(),
+      });
+
+      return response;
+    } catch (error) {
+      console.error("Stellar fee-bump submission failed:", error);
+      throw error;
+    }
   }
 
   async sendPayment(
@@ -61,6 +120,7 @@ export class StellarService {
     amount: string,
     senderName?: string,
     receiverName?: string,
+    useFeeBump?: boolean,
   ): Promise<{
     hash?: string;
     submittedAt?: Date;
@@ -120,8 +180,14 @@ export class StellarService {
         .build();
 
       transaction.sign(this.issuerKeypair);
-      const response: StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse =
-        await this.server.submitTransaction(transaction);
+
+      // Check if fee bumping is requested
+      let response: StellarSdk.Horizon.HorizonApi.SubmitTransactionResponse;
+      if (useFeeBump) {
+        response = await this.submitFeeBumpTransaction(transaction);
+      } else {
+        response = await this.server.submitTransaction(transaction);
+      }
 
       console.log("Stellar payment successful", {
         hash: response.hash,
@@ -272,6 +338,87 @@ export class StellarService {
       return result;
     } catch (error) {
       console.error("Failed to fetch transaction history:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Enables clawback capability on the issuance account.
+   * This sets the AUTH_CLAWBACK_ENABLED flag (0x8).
+   */
+  async enableClawback(): Promise<void> {
+    if (this.isMockMode || !this.issuerKeypair) {
+      console.log("Mock: Enabled clawback on issuer account");
+      return;
+    }
+
+    try {
+      const account = await this.server.loadAccount(
+        this.issuerKeypair.publicKey(),
+      );
+      const transaction = new StellarSdk.TransactionBuilder(account, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: getNetworkPassphrase(),
+      })
+        .addOperation(
+          StellarSdk.Operation.setOptions({
+            setFlags: StellarSdk.xdr.AccountFlags.authClawbackEnabledFlag().value,
+          }),
+        )
+        .setTimeout(30)
+        .build();
+
+      transaction.sign(this.issuerKeypair);
+      await this.server.submitTransaction(transaction);
+      console.log("Clawback capability enabled on issuance account");
+    } catch (error) {
+      console.error("Failed to enable clawback capability:", error);
+      throw error;
+    }
+  }
+
+  /**
+   * Executes a clawback operation for a specific address and amount.
+   */
+  async executeClawback(
+    fromAddress: string,
+    amount: string,
+  ): Promise<{ hash?: string }> {
+    if (this.isMockMode || !this.issuerKeypair) {
+      console.log("Mock Stellar clawback:", { fromAddress, amount });
+      return { hash: "mock_clawback_hash" };
+    }
+
+    try {
+      const paymentAsset = getConfiguredPaymentAsset();
+      if (paymentAsset.isNative()) {
+        throw new Error("Cannot claw back native XLM");
+      }
+
+      const account = await this.server.loadAccount(
+        this.issuerKeypair.publicKey(),
+      );
+      const transaction = new StellarSdk.TransactionBuilder(account, {
+        fee: StellarSdk.BASE_FEE,
+        networkPassphrase: getNetworkPassphrase(),
+      })
+        .addOperation(
+          StellarSdk.Operation.clawback({
+            from: fromAddress,
+            asset: paymentAsset,
+            amount: amount,
+          }),
+        )
+        .setTimeout(30)
+        .build();
+
+      transaction.sign(this.issuerKeypair);
+      const response = await this.server.submitTransaction(transaction);
+      console.log("Stellar clawback successful", { hash: response.hash });
+
+      return { hash: response.hash };
+    } catch (error) {
+      console.error("Stellar clawback failed:", error);
       throw error;
     }
   }

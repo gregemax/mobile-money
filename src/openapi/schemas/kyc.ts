@@ -63,3 +63,27 @@ export const UploadKYCDocumentRequestSchema = registry.register(
     })
     .openapi('UploadKYCDocumentRequest'),
 );
+export const KYCRejectionReasonSchema = registry.register(
+  'KYCRejectionReason',
+  z.enum([
+    'Blurry ID',
+    'Expired ID',
+    'Name Mismatch',
+    'Address Mismatch',
+    'Selfie Mismatch',
+    'Unsupported Document Type',
+    'Fraudulent Document',
+    'Incomplete Information',
+    'Other'
+  ]).openapi('KYCRejectionReason')
+);
+
+export const RejectKYCRequestSchema = registry.register(
+  'RejectKYCRequest',
+  z.object({
+    rejection_reason: KYCRejectionReasonSchema.openapi({ example: 'Blurry ID' }),
+    notes: z.string().optional().openapi({ example: 'The ID is too blurry to read the expiration date.' }),
+  })
+  .required({ rejection_reason: true })
+  .openapi('RejectKYCRequest')
+);

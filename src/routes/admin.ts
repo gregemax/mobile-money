@@ -20,8 +20,10 @@ import { getQueueStats } from "../queue/transactionQueue";
 import { redisClient } from "../config/redis";
 import { checkReplicaHealth, pool } from "../config/database";
 import { UserModel } from "../models/users";
-import { TransactionModel } from "../models/transaction";
-import { TransactionStatus } from "../models/transaction";
+import { TransactionModel, TransactionStatus } from "../models/transaction";
+import { StellarService } from "../services/stellar/stellarService";
+import { ledgerService } from "../services/ledgerService";
+import highThroughputService from "../services/stellar/highThroughputService";
 import multer from "multer";
 import { parseCSV, reconcileTransactions } from "../services/csvReconciliation";
 import {
@@ -2217,6 +2219,199 @@ router.patch(
     } catch (error) {
       console.error("[compliance/docs:update]", error);
       res.status(500).json({ message: "Failed to update compliance document" });
+    }
+  },
+);
+
+/**
+ * =========================
+ * STELLAR OPERATIONS
+ * =========================
+ */
+
+// POST /api/admin/stellar/enable-clawback
+router.post(
+  "/stellar/enable-clawback",
+  requireAdmin,
+  requireSuperAdmin,
+  logAdminAction("ENABLE_STELLAR_CLAWBACK"),
+  async (_req: Request, res: Response) => {
+    try {
+      const stellarService = new StellarService();
+      await stellarService.enableClawback();
+      res.json({ message: "Clawback capability enabled on issuance account" });
+    } catch (err) {
+      console.error("Error enabling clawback:", err);
+      res.status(500).json({
+        message: "Failed to enable clawback capability",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+// POST /api/admin/stellar/clawback
+router.post(
+  "/stellar/clawback",
+  requireAdmin,
+  logAdminAction("EXECUTE_STELLAR_CLAWBACK"),
+  async (req: Request, res: Response) => {
+    try {
+      const { transactionId, reason } = req.body;
+
+      if (!transactionId) {
+        return res.status(400).json({ message: "transactionId is required" });
+      }
+      if (!reason) {
+        return res
+          .status(400)
+          .json({ message: "reason is required for clawback" });
+      }
+
+      const transaction = await transactionModel.findById(transactionId);
+      if (!transaction) {
+        return res.status(404).json({ message: "Transaction not found" });
+      }
+
+      if (transaction.status !== TransactionStatus.Completed) {
+        return res.status(400).json({
+          message: `Cannot claw back transaction in status: ${transaction.status}`,
+        });
+      }
+
+      const stellarService = new StellarService();
+      const { hash } = await stellarService.executeClawback(
+        transaction.stellarAddress,
+        transaction.amount,
+      );
+
+      // Handle accounting reversal
+      await ledgerService.postClawback(
+        parseFloat(transaction.amount),
+        transaction.referenceNumber,
+        transaction.id,
+        (req as AuthRequest).user?.id || "admin",
+        reason,
+      );
+
+      // Update transaction status
+      await transactionModel.updateStatus(
+        transactionId,
+        TransactionStatus.ClawedBack,
+      );
+
+      res.json({
+        message: "Transaction clawed back successfully",
+        stellarHash: hash,
+        transactionId,
+      });
+    } catch (err) {
+      console.error("Error executing clawback:", err);
+      res.status(500).json({
+        message: "Failed to execute clawback",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
+    }
+  },
+);
+
+// POST /api/admin/stellar/batch-payment
+router.post(
+  "/stellar/batch-payment",
+  requireAdmin,
+  logAdminAction("EXECUTE_STELLAR_BATCH_PAYMENT"),
+  async (req: Request, res: Response) => {
+    try {
+      const { payments } = req.body; // Array of { destination, amount, memo }
+
+      if (!Array.isArray(payments) || payments.length === 0) {
+        return res
+          .status(400)
+          .json({ message: "payments array is required and cannot be empty" });
+      }
+
+      if (payments.length > 50) {
+        return res
+          .status(400)
+          .json({ message: "Maximum 50 payments per batch allowed" });
+      }
+
+      // Initialize HighThroughputService if needed
+      if (!highThroughputService.isServiceInitialized()) {
+        await highThroughputService.initialize();
+      }
+
+      const stellarIssuerSecret = process.env.STELLAR_ISSUER_SECRET;
+      if (!stellarIssuerSecret) {
+        throw new Error("STELLAR_ISSUER_SECRET not configured");
+      }
+
+      const issuerPublicKey = StellarSdk.Keypair.fromSecret(
+        stellarIssuerSecret,
+      ).publicKey();
+
+      // 1. Create transactions in DB
+      const transactionIds: string[] = [];
+      for (const p of payments) {
+        const tx = await transactionModel.create({
+          type: "payment",
+          amount: p.amount,
+          stellarAddress: p.destination,
+          provider: "stellar",
+          status: TransactionStatus.Pending,
+          metadata: { memo: p.memo, batch: true },
+        });
+        transactionIds.push(tx.id);
+      }
+
+      // 2. Prepare payments for HighThroughputService
+      const paymentOptions = payments.map((p, index) => ({
+        sourceAccount: issuerPublicKey,
+        sourceSecret: stellarIssuerSecret,
+        destination: p.destination,
+        amount: p.amount,
+        asset: "native" as const, // Or configured asset
+        memo: p.memo,
+        useFeeBump: true, // Key feature requirement
+      }));
+
+      // 3. Submit batch
+      const batchResult =
+        await highThroughputService.submitBatchPayments(paymentOptions);
+
+      // 4. Update DB status based on results
+      for (let i = 0; i < batchResult.results.length; i++) {
+        const result = batchResult.results[i];
+        const txId = transactionIds[i];
+
+        if (result.success) {
+          await transactionModel.updateStatus(txId, TransactionStatus.Completed);
+          await transactionModel.updateMetadata(txId, {
+            ...payments[i].metadata,
+            stellar: { transactionHash: result.hash },
+          });
+        } else {
+          await transactionModel.updateStatus(txId, TransactionStatus.Failed);
+          await transactionModel.updateMetadata(txId, {
+            ...payments[i].metadata,
+            error: result.error,
+          });
+        }
+      }
+
+      res.json({
+        message: "Batch payment processed",
+        successful: batchResult.successful,
+        failed: batchResult.failed,
+        results: batchResult.results,
+        totalTimeMs: batchResult.totalTimeMs,
+      });
+    } catch (err) {
+      console.error("Error executing batch payment:", err);
+      res.status(500).json({
+        message: "Failed to execute batch payment",
+        error: err instanceof Error ? err.message : "Unknown error",
+      });
     }
   },
 );

@@ -14,6 +14,7 @@ import {
   approveKycUpgrade,
   rejectKycUpgrade,
 } from "../services/kycTierUpgradeService";
+import { KYC_REJECTION_REASONS } from "../config/kycRejectionReasons";
 
 const router = Router();
 
@@ -37,6 +38,10 @@ const normalizeBulkIds = (value: unknown): string[] => {
 };
 
 // ─── list ─────────────────────────────────────────────────────────────────────
+
+router.get("/reasons", (req: Request, res: Response) => {
+  res.json({ data: KYC_REJECTION_REASONS });
+});
 
 router.get("/", async (req: Request, res: Response) => {
   try {
@@ -104,8 +109,18 @@ router.post("/:id/reject", async (req: Request, res: Response) => {
 
     const notes =
       typeof req.body?.notes === "string" ? req.body.notes.trim() : undefined;
+    const rejectionReason =
+      typeof req.body?.rejection_reason === "string" ? req.body.rejection_reason.trim() : undefined;
 
-    await rejectKycUpgrade({ requestId, reviewedBy, notes });
+    if (!rejectionReason) {
+      return res.status(400).json({ error: "rejection_reason is required when rejecting KYC" });
+    }
+
+    if (!KYC_REJECTION_REASONS.includes(rejectionReason as any)) {
+      return res.status(400).json({ error: "Invalid rejection reason" });
+    }
+
+    await rejectKycUpgrade({ requestId, reviewedBy, notes, rejectionReason });
 
     res.json({ message: "KYC upgrade rejected" });
   } catch (err) {
@@ -199,12 +214,22 @@ router.post("/bulk/reject", async (req: Request, res: Response) => {
 
     const notes =
       typeof req.body?.notes === "string" ? req.body.notes.trim() : undefined;
+    const rejectionReason =
+      typeof req.body?.rejection_reason === "string" ? req.body.rejection_reason.trim() : undefined;
+
+    if (!rejectionReason) {
+      return res.status(400).json({ error: "rejection_reason is required when rejecting KYC" });
+    }
+
+    if (!KYC_REJECTION_REASONS.includes(rejectionReason as any)) {
+      return res.status(400).json({ error: "Invalid rejection reason" });
+    }
 
     const results: BulkKycUpgradeResult[] = [];
 
     for (const requestId of requestIds) {
       try {
-        await rejectKycUpgrade({ requestId, reviewedBy, notes });
+        await rejectKycUpgrade({ requestId, reviewedBy, notes, rejectionReason });
         results.push({ requestId, status: "success" });
       } catch (err) {
         results.push({

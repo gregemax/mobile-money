@@ -201,6 +201,40 @@ export class LedgerService {
   }
 
   /**
+   * Post a clawback transaction (reversal due to fraud)
+   * Debit: Customer Balances (liability decreases)
+   * Credit: Mobile Money Float (asset decreases)
+   */
+  async postClawback(
+    amount: number,
+    referenceNumber: string,
+    transactionId: string,
+    userId: string,
+    reason: string
+  ): Promise<PostedEntry[]> {
+    const entries: LedgerEntry[] = [
+      {
+        account_code: '2000', // Customer Balances
+        debit_amount: amount,
+        description: `Clawback: ${reason}`
+      },
+      {
+        account_code: '1100', // Mobile Money Float
+        credit_amount: amount,
+        description: `Clawback reversal: ${referenceNumber}`
+      }
+    ];
+
+    return this.postTransaction(
+      referenceNumber,
+      `Clawback: ${amount} - Reason: ${reason}`,
+      entries,
+      transactionId,
+      userId
+    );
+  }
+
+  /**
    * Post provider fee expense
    * Debit: Provider Transaction Fees (expense increases)
    * Credit: Cash/Float (asset decreases)

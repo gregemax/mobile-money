@@ -21,6 +21,7 @@ import {
   getNetworkPassphrase,
   getChannelAccountsConfig,
 } from "../../config/stellar";
+import { StellarService } from "./stellarService";
 
 // ============================================================================
 // Types
@@ -39,6 +40,8 @@ export interface PaymentOptions {
   amount: string;
   /** Optional memo */
   memo?: string;
+  /** Whether to use a fee-bump account to pay for network fees */
+  useFeeBump?: boolean;
 }
 
 export interface BatchPaymentResult {
@@ -143,10 +146,12 @@ export async function submitPayment(
         // Build the transaction using the channel account
         const channelAccount = new StellarSdk.Account(
           channelPublicKey,
-          (sequence - BigInt(1)).toString()
+          (sequence - BigInt(1)).toString(),
         );
 
-        const sourceKeypair = StellarSdk.Keypair.fromSecret(options.sourceSecret);
+        const sourceKeypair = StellarSdk.Keypair.fromSecret(
+          options.sourceSecret,
+        );
         const asset =
           options.asset === "native"
             ? StellarSdk.Asset.native()
@@ -164,7 +169,7 @@ export async function submitPayment(
             asset,
             amount: options.amount,
             source: options.sourceAccount,
-          })
+          }),
         );
 
         // Add memo if provided
@@ -178,15 +183,27 @@ export async function submitPayment(
         transaction.sign(channelKeypair);
         transaction.sign(sourceKeypair);
 
-        // Submit to network
+        // Check if fee bumping is requested
+        if (options.useFeeBump) {
+          const stellarService = new StellarService();
+          const response =
+            await stellarService.submitFeeBumpTransaction(transaction);
+          return {
+            hash: response.hash,
+            ledger: response.ledger,
+            fee: parseInt(response.successful ? StellarSdk.BASE_FEE : "0"),
+          };
+        }
+
+        // Submit to network directly
         const response = await server.submitTransaction(transaction);
 
         return {
           hash: response.hash,
           ledger: response.ledger,
-          fee: parseInt(response.successful ? '100' : '0'),
+          fee: parseInt(response.successful ? "100" : "0"),
         };
-      }
+      },
     );
 
     return {
@@ -273,6 +290,17 @@ export async function submitBatchPayments(
         const transaction = builder.setTimeout(30).build();
         transaction.sign(channelKeypair);
         transaction.sign(sourceKeypair);
+
+        if (payment.useFeeBump) {
+          const stellarService = new StellarService();
+          const response =
+            await stellarService.submitFeeBumpTransaction(transaction);
+          return {
+            index,
+            hash: response.hash,
+            ledger: response.ledger,
+          };
+        }
 
         const response = await server.submitTransaction(transaction);
         return {
