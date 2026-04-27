@@ -25,6 +25,15 @@ export interface EmailOptions {
   }>;
 }
 
+export interface VulnerabilityReport {
+  total: number;
+  critical: number;
+  high: number;
+  moderate: number;
+  low: number;
+  info: number;
+}
+
 export class EmailService {
   private resolveTemplateId(
     baseEnvName: "SENDGRID_RECEIPT_TEMPLATE_ID" | "SENDGRID_FAILURE_TEMPLATE_ID",
@@ -243,6 +252,53 @@ export class EmailService {
 
             <p style="color:#999;font-size:12px;margin-top:30px;text-align:center;">
               &copy; ${new Date().getFullYear()} Mobile Money. This is an automated management report.
+            </p>
+          </div>
+        `,
+      });
+    }
+  }
+
+  async sendVulnerabilityReport(
+    email: string,
+    report: VulnerabilityReport,
+  ): Promise<void> {
+    const templateId = process.env.SENDGRID_VULNERABILITY_REPORT_TEMPLATE_ID;
+    const from = process.env.EMAIL_FROM || '"Mobile Money" <no-reply@mobilemoney.com>';
+
+    if (templateId) {
+      await this.sendEmail({
+        to: email,
+        templateId,
+        dynamicTemplateData: {
+          ...report,
+          reportDate: new Date().toLocaleDateString(),
+          year: new Date().getFullYear(),
+        },
+      });
+    } else {
+      // Fallback HTML
+      await sgMail.send({
+        from,
+        to: email,
+        subject: `Weekly Security Vulnerability Report - ${new Date().toLocaleDateString()}`,
+        html: `
+          <div style="font-family:sans-serif;max-width:600px;margin:0 auto;border:1px solid #eee;padding:20px;">
+            <h2 style="color:#2c3e50;border-bottom:2px solid #e74c3c;padding-bottom:10px;">Security Vulnerability Report</h2>
+            <p><strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+            
+            <div style="background:#f9f9f9;padding:15px;border-radius:5px;margin:20px 0;">
+              <h3 style="margin-top:0;color:#c0392b;">Summary</h3>
+              <table style="width:100%; font-size: 16px;">
+                <tr><td style="padding: 4px 0;">Total Vulnerabilities:</td><td style="text-align:right;"><strong>${report.total}</strong></td></tr>
+                <tr><td style="color:#c0392b; padding: 4px 0;">Critical:</td><td style="text-align:right;color:#c0392b;"><strong>${report.critical}</strong></td></tr>
+                <tr><td style="color:#e67e22; padding: 4px 0;">High:</td><td style="text-align:right;color:#e67e22;"><strong>${report.high}</strong></td></tr>
+                <tr><td style="color:#f39c12; padding: 4px 0;">Moderate:</td><td style="text-align:right;color:#f39c12;"><strong>${report.moderate}</strong></td></tr>
+                <tr><td style="color:#27ae60; padding: 4px 0;">Low:</td><td style="text-align:right;color:#27ae60;"><strong>${report.low}</strong></td></tr>
+              </table>
+            </div>
+            <p style="color:#999;font-size:12px;margin-top:30px;text-align:center;">
+              &copy; ${new Date().getFullYear()} Mobile Money. Automated Security Audit.
             </p>
           </div>
         `,
