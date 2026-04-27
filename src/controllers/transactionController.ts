@@ -18,10 +18,6 @@ import {
 } from "../config/providers";
 import type { TransactionJobData } from "../queue/transactionQueue";
 import { amlService } from "../services/aml";
-    const {
-      before,
-      after,
-    } = req.query;
 import { twoFactorWithdrawalService } from "../services/twoFactorWithdrawalService";
 import {
   CancelTransactionResponse,
@@ -89,8 +85,6 @@ export const transactionSchema = z.object({
   twoFactorToken: z.string().optional(),
   backupCode: z.string().optional(),
 });
-    const before = req.query.before as string | undefined;
-    const after = req.query.after as string | undefined;
 
 export const validateTransaction = (
   req: Request,
