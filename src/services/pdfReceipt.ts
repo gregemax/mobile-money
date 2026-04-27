@@ -44,6 +44,25 @@ export async function generateTransactionPdfBuffer(
       if (transaction.stellarAddress)
         doc.text(`Stellar: ${maskStellarAddress(transaction.stellarAddress)}`, leftX);
 
+      // Add StellarExpert Transaction Hash Link if available
+      const metadata = (transaction as any).metadata as Record<string, any> | undefined;
+      const txHash = metadata?.transactionHash || metadata?.stellarTransactionId || (transaction as any).transactionHash || (transaction as any).stellarTransactionId;
+      
+      if (txHash) {
+        const network = process.env.STELLAR_NETWORK === 'mainnet' || process.env.STELLAR_NETWORK === 'public' ? 'public' : 'testnet';
+        const stellarExpertUrl = `https://stellar.expert/explorer/${network}/tx/${txHash}`;
+        
+        doc.moveDown(0.2);
+        doc
+          .fontSize(10)
+          .fillColor("#3498db")
+          .text(`View Transaction on StellarExpert`, leftX, doc.y, {
+            link: stellarExpertUrl,
+            underline: true
+          })
+          .fillColor("#000"); // Reset text color
+      }
+
       const amountStr = transaction.amount;
       doc.fontSize(12).text(`Amount`, rightX, 140, { continued: false });
       doc.fontSize(14).text(`${amountStr}`, rightX, 158, { align: "right" });

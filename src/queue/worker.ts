@@ -15,6 +15,8 @@ import { SmsService } from "../services/sms";
 import { notifyTransactionWebhook, WebhookService } from "../services/webhook";
 import { pushNotificationService } from "../services/push";
 import { capturePersistentFailure } from "./dlq";
+import { queryRead } from "../config/database";
+import logger from "../utils/logger";
 const transactionModel = new TransactionModel();
 const mobileMoneyService = new MobileMoneyService();
 const stellarService = new StellarService();
@@ -125,6 +127,23 @@ async function updateProgress(transactionId: string, progress: number) {
   }
 }
 
+/** Resolves a user's full name from KYC data for sanction screening. */
+async function resolveKycName(userId: string): Promise<string | null> {
+  try {
+    const result = await queryRead(
+      `SELECT applicant_data->>'first_name' AS "firstName",
+              applicant_data->>'last_name'  AS "lastName"
+       FROM kyc_applicants WHERE user_id = $1 LIMIT 1`,
+      [userId],
+    );
+    if (!result.rows.length) return null;
+    const { firstName, lastName } = result.rows[0];
+    return `${firstName ?? ""} ${lastName ?? ""}`.trim() || null;
+  } catch {
+    return null;
+  }
+}
+
 async function processTransaction(data: TransactionJobData): Promise<TransactionJobResult> {
   const {
     transactionId,
@@ -133,9 +152,11 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
     phoneNumber,
     provider,
     stellarAddress,
+    requestId,
   } = data;
 
-  console.log(`[RabbitMQ] Processing ${type} transaction: ${transactionId}`);
+  const log = requestId ? logger.child({ requestId, transactionId }) : logger.child({ transactionId });
+  log.info({ type, provider }, `[RabbitMQ] Processing transaction`);
 
   const maxAttempts = Math.max(
     1,
@@ -158,12 +179,19 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
       error: unknown;
     }) => {
       await transactionModel.incrementRetryCount(transactionId);
-      console.warn(
-        `[${transactionId}] transient failure (attempt ${attempt}), will retry:`,
-        error instanceof Error ? error.message : error,
+      log.warn(
+        { attempt, error: error instanceof Error ? error.message : error },
+        "Transient failure, will retry",
       );
     },
   };
+
+  // Resolve sender name for sanction screening (best-effort; falls back to phone number)
+  const txRow = await transactionModel.findById(transactionId);
+  const senderName =
+    (txRow?.userId ? await resolveKycName(txRow.userId) : null) ?? phoneNumber;
+  // Receiver is the mobile money account holder identified by their phone number
+  const receiverName = phoneNumber;
 
   const sendTxnSms = async (
     kind: "transaction_completed" | "transaction_failed",
@@ -189,12 +217,12 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
         errorMessage,
       });
     } catch (smsErr) {
-      console.error(`[${transactionId}] SMS notification error`, smsErr);
+      log.error({ smsErr }, "SMS notification error");
     }
   };
 
         const stellarResult = await withRetry(
-          () => stellarService.sendPayment(stellarAddress, amount),
+          () => stellarService.sendPayment(stellarAddress, amount, senderName, receiverName),
           retryConfig,
         );
 
@@ -224,6 +252,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
           provider,
           phoneNumber,
           amount,
+          requestId,
         );
         if (!result.success) {
           throw new Error(getProviderFailureMessage(result));
@@ -236,7 +265,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
         await transactionModel.patchMetadata(transactionId, {
           providerResponseTimeMs: mobileMoneyResult.providerResponseTimeMs,
           providerRespondedAt: new Date().toISOString(),
-        }).catch(err => console.warn(`[${transactionId}] Failed to log provider response time:`, err));
+        }).catch(err => log.warn({ err }, "Failed to log provider response time"));
       }
 
       await updateProgress(transactionId, 50);
@@ -247,7 +276,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
       await updateProgress(transactionId, 70);
 
       await withRetry(
-        () => stellarService.sendPayment(stellarAddress, amount),
+        () => stellarService.sendPayment(stellarAddress, amount, senderName, receiverName),
         retryConfig,
       );
 
@@ -272,7 +301,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
       });
 
       await updateProgress(transactionId, 100);
-      console.log(`[${transactionId}] Deposit completed successfully`);
+      log.info("Deposit completed successfully");
 
       return { success: true, transactionId };
     } else {
@@ -283,6 +312,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
           provider,
           phoneNumber,
           amount,
+          requestId,
         );
         if (!result.success) {
           throw new Error(getProviderFailureMessage(result));
@@ -295,7 +325,7 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
         await transactionModel.patchMetadata(transactionId, {
           providerResponseTimeMs: mobileMoneyResult.providerResponseTimeMs,
           providerRespondedAt: new Date().toISOString(),
-        }).catch(err => console.warn(`[${transactionId}] Failed to log provider response time:`, err));
+        }).catch(err => log.warn({ err }, "Failed to log provider response time"));
       }
 
       await updateProgress(transactionId, 50);
@@ -324,12 +354,12 @@ async function processTransaction(data: TransactionJobData): Promise<Transaction
       });
 
       await updateProgress(transactionId, 100);
-      console.log(`[${transactionId}] Withdraw completed successfully`);
+      log.info("Withdraw completed successfully");
 
       return { success: true, transactionId };
     }
   } catch (error) {
-    console.error(`[${transactionId}] Transaction failed:`, error);
+    log.error({ error }, "Transaction failed");
     await transactionModel.updateStatus(
       transactionId,
       TransactionStatus.Failed,
@@ -366,7 +396,7 @@ rabbitMQManager.consume<TransactionJobData>(
     await processTransaction(data);
   },
   CONCURRENCY
-).catch(err => console.error("RabbitMQ Consumer error:", err));
+).catch(err => logger.error({ err }, "RabbitMQ Consumer error"));
 
 export const transactionWorker = {
   close: async () => {}, // Handled by rabbitMQManager global shutdown

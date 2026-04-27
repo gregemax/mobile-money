@@ -13,6 +13,15 @@ export const env = cleanEnv(process.env, {
     desc: "PostgreSQL connection string",
     example: "postgresql://user:password@localhost:5432/dbname",
   }),
+  SANDBOX_DATABASE_URL: str({
+    desc: "PostgreSQL connection string for sandbox environment",
+    example: "postgresql://user:password@localhost:5432/dbname_sandbox",
+    default: "",
+  }),
+  IS_SANDBOX: bool({
+    desc: "Whether the application is running in sandbox mode",
+    default: false,
+  }),
   STELLAR_ISSUER_SECRET: str({
     desc: "Stellar secret key for the issuer account",
     example: "S...",
@@ -62,15 +71,27 @@ export const env = cleanEnv(process.env, {
     default: "mobile-money",
     desc: "PagerDuty deduplication key prefix for incident grouping",
   }),
+  ADMIN_API_KEY: str({
+    default: "",
+    desc: "Admin API key for internal tooling",
+    example: "admin-secret-key",
+  }),
   APQ_TTL_SECONDS: str({
     default: "86400",
     desc: "TTL in seconds for Automatic Persisted Query entries in Redis (default: 86400 = 24h)",
+  }),
+  AML_API_KEY: str({
+    default: "",
+    desc: "API key for third-party AML/sanction screening provider (e.g. Elliptic, Chainalysis)",
+    example: "ell_live_xxxxxxxxxxxx",
   }),
 });
 
 // Re-export specific values for convenience
 export const {
   DATABASE_URL,
+  SANDBOX_DATABASE_URL,
+  IS_SANDBOX,
   STELLAR_ISSUER_SECRET,
   REDIS_URL,
   STELLAR_HORIZON_URL,

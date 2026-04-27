@@ -9,6 +9,21 @@ export interface SanctionEntity {
   external_id?: string;
 }
 
+export class SanctionScreeningError extends Error {
+  constructor(
+    public readonly party: "sender" | "receiver",
+    public readonly screenedName: string,
+    public readonly matchedEntity: string,
+    public readonly score: number,
+    public readonly source: string,
+  ) {
+    super(
+      `Sanction screening blocked: ${party} "${screenedName}" matched "${matchedEntity}" (score ${score.toFixed(2)}) on ${source}`,
+    );
+    this.name = "SanctionScreeningError";
+  }
+}
+
 export class SanctionService {
   /**
    * Fetches the latest sanction list updates from a public source.
@@ -146,6 +161,31 @@ export class SanctionService {
     }
     
     return jaro + prefix * 0.1 * (1 - jaro);
+  }
+
+  /**
+   * Screens both sender and receiver against the sanction list.
+   * Throws SanctionScreeningError immediately on the first hit.
+   */
+  async checkParties(senderName: string, receiverName: string): Promise<void> {
+    const parties: Array<{ name: string; role: "sender" | "receiver" }> = [
+      { name: senderName, role: "sender" },
+      { name: receiverName, role: "receiver" },
+    ];
+
+    for (const { name, role } of parties) {
+      const matches = await this.searchSanctions(name);
+      if (matches.length > 0) {
+        const top = matches[0];
+        throw new SanctionScreeningError(
+          role,
+          name,
+          top.entity.name,
+          top.score,
+          top.entity.source,
+        );
+      }
+    }
   }
 }
 

@@ -12,6 +12,7 @@
     "dev": "tsx watch src/index.ts",
     "docker:dev": "docker-compose -f docker-compose.dev.yml up",
     "docker:dev:down": "docker-compose -f docker-compose.dev.yml down",
+    "provider-mock:dev": "tsx scripts/provider-mock-server.ts",
     "build": "tsc --noEmitOnError false || true",
     "start": "node dist/index.js",
     "lint": "eslint src --ext .ts",
@@ -37,9 +38,12 @@
     "test:load:transactions": "k6 run -e SCENARIO=transactions tests/load/api.js",
     "test:load:breakpoint": "k6 run -e SCENARIO=breakpoint tests/load/api.js",
     "test:load:legacy": "k6 run tests/load/k6/load_test_scenarios.js",
+    "test:write-latency": "ts-node scripts/test-write-latency.ts",
     "test:bench": "node tests/load/autocannon/benchmark.js",
     "sdk:generate": "openapi-generator-cli generate -i openapi.yaml -c sdk-config.yaml -o sdk",
-    "sdk:build": "cd sdk && ./gradlew build"
+    "sdk:build": "cd sdk && ./gradlew build",
+    "docs:dev": "npm --prefix docs-portal run start",
+    "docs:build": "npm --prefix docs-portal run build"
   },
   "lint-staged": {
     "*.{ts,tsx,js,cjs,mjs,json,md,yml,yaml}": "prettier --write"
@@ -48,6 +52,7 @@
   "author": "",
   "license": "MIT",
   "dependencies": {
+    "@asteasolutions/zod-to-openapi": "8.5.0",
     "@aws-sdk/client-s3": "^3.1017.0",
     "@aws-sdk/lib-storage": "^3.1017.0",
     "@bull-board/api": "^6.20.6",
@@ -57,6 +62,7 @@
     "@sentry/node": "^10.47.0",
     "@types/passport": "^1.0.17",
     "@types/speakeasy": "^2.0.10",
+    "@types/swagger-ui-express": "4.1.8",
     "amqp-connection-manager": "^5.0.0",
     "amqplib": "^0.10.9",
     "apollo-server-core": "^3.13.0",
@@ -106,14 +112,17 @@
     "pdfkit": "^0.18.0",
     "pg": "^8.11.3",
     "pg-query-stream": "^4.10.3",
+    "pino": "^10.3.1",
     "prom-client": "^15.1.3",
     "qrcode": "^1.5.3",
+    "rate-limiter-flexible": "^11.0.1",
     "redis": "^5.11.0",
     "redlock": "^5.0.0-beta.2",
     "sharp": "^0.34.5",
     "spdy": "^4.0.2",
     "speakeasy": "^2.0.0",
     "stellar-sdk": "^12.3.0",
+    "swagger-ui-express": "5.0.1",
     "twilio": "^5.13.1",
     "ua-parser-js": "^2.0.9",
     "uuid": "^9.0.0",
@@ -123,6 +132,7 @@
   },
   "devDependencies": {
     "@aws-sdk/client-kms": "^3.1036.0",
+    "@cloudflare/workers-types": "4.20250422.0",
     "@playwright/test": "^1.59.1",
     "@stryker-mutator/core": "^9.6.1",
     "@stryker-mutator/jest-runner": "^9.6.1",

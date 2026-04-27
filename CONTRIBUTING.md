@@ -317,6 +317,20 @@ New to the project? Look for issues labeled `good first issue`:
 - Fix typos
 - Add logging
 
+## 🔔 CI Slack Notifications
+
+When a CI run fails on the `main` branch, an automatic Slack notification is sent with the workflow name, triggering actor, commit SHA, and a direct link to the failed run.
+
+### Required secret
+
+| Secret name | Where to get it |
+|---|---|
+| `SLACK_WEBHOOK_URL` | Create an [Incoming Webhook](https://api.slack.com/messaging/webhooks) in your Slack workspace, then add the generated URL as a repository secret under **Settings → Secrets and variables → Actions**. |
+
+Notifications fire **only** on `main` branch failures. Passing builds and pull-request runs are never notified.
+
+---
+
 ## 🔒 Security Issues
 
 **DO NOT** open public issues for security vulnerabilities.

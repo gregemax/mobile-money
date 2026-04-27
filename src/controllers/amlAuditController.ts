@@ -352,3 +352,45 @@ export const getAmlDashboardStats = async (
     res.status(500).json({ error: "Failed to get AML dashboard stats" });
   }
 };
+
+/**
+ * Manually trigger SAR generation for an alert
+ * POST /api/audit/aml/alerts/:alertId/sar
+ */
+export const markAlertForSAR = async (
+  req: Request,
+  res: Response,
+): Promise<void> => {
+  try {
+    const { alertId } = req.params;
+    const { generateSAR } = require("../compliance/sar");
+
+    const alert = await amlAlertModel.findById(alertId);
+    if (!alert) {
+      res.status(404).json({ error: "AML alert not found" });
+      return;
+    }
+
+    const { pdfUrl, xmlUrl } = await generateSAR(alert.userId, alertId);
+
+    // Record the action in review notes
+    await amlAlertModel.review(
+      alertId,
+      {
+        status: "reviewed",
+        reviewedBy: req.jwtUser?.userId || "system",
+        reviewNotes: `[SAR GENERATED] Manual SAR export triggered. PDF: ${pdfUrl}, XML: ${xmlUrl}`,
+      },
+      req.jwtUser?.userId || "system",
+    );
+
+    res.json({
+      message: "SAR reports generated successfully",
+      pdfUrl,
+      xmlUrl,
+    });
+  } catch (error) {
+    console.error("Failed to mark alert for SAR:", error);
+    res.status(500).json({ error: "Failed to generate SAR reports" });
+  }
+};
