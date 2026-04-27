@@ -231,3 +231,25 @@ export class TrustlineError extends Error {
     this.name = "TrustlineError";
   }
 }
+
+/**
+ * Verifies that `destinationAccount` has a trustline for `asset`.
+ *
+ * Throws a {@link TrustlineError} when the trustline is absent so callers can
+ * surface a clear error before attempting an on-chain payment.
+ *
+ * @throws {TrustlineError} when the trustline is missing
+ * @throws re-throws unexpected Horizon errors as-is
+ */
+export async function checkDestinationTrustline(
+  destinationAccount: string,
+  asset: StellarSdk.Asset,
+): Promise<void> {
+  const trusted = await hasTrustline(destinationAccount, asset);
+  if (!trusted) {
+    throw new TrustlineError(
+      `Destination account ${destinationAccount} has no trustline for ${asset.getCode()}`,
+      asset,
+    );
+  }
+}

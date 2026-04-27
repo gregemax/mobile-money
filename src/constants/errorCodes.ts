@@ -51,6 +51,8 @@ export const ERROR_CODES = {
      TRANSACTION_FAILED: "TRANSACTION_FAILED",
      PROVIDER_ERROR: "PROVIDER_ERROR",
      RATE_LIMIT: "RATE_LIMIT",
+     /** Destination Stellar account has not established a trustline for the payment asset. */
+     TRUSTLINE_MISSING: "TRUSTLINE_MISSING",
   
     // Server errors (5000+) - HTTP 500+
     INTERNAL_ERROR: "INTERNAL_ERROR",
@@ -131,7 +133,8 @@ export const ERROR_CODES = {
      if (
        code === ERROR_CODES.INSUFFICIENT_BALANCE ||
        code === ERROR_CODES.INSUFFICIENT_FUNDS ||
-       code === ERROR_CODES.TRANSACTION_FAILED
+       code === ERROR_CODES.TRANSACTION_FAILED ||
+       code === ERROR_CODES.TRUSTLINE_MISSING
      ) {
        return 400;
      }
