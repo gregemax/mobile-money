@@ -216,6 +216,7 @@ app.get("/health", (_req: Request, res: Response) => {
   const body: HealthCheckResponse = {
     status: "ok",
     timestamp: new Date().toISOString(),
+    gitHash: process.env.BUILD_HASH,
   };
   res.json(body);
 });

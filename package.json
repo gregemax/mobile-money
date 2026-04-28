@@ -31,6 +31,8 @@
     "migrate:status": "tsx src/scripts/migrate.ts status",
     "seed": "tsx src/scripts/seed.ts",
     "reconcile:ledger": "tsx src/scripts/reconcile-ledger.ts",
+    "backup:create": "tsx src/scripts/backup.ts",
+    "backup:verify": "tsx src/scripts/verify-backups.ts",
     "postinstall": "npm run prepare",
     "contracts:build": "cd contracts/escrow && cargo build --target wasm32-unknown-unknown --release",
     "contracts:test": "cd contracts/escrow && cargo test",
@@ -132,6 +134,8 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@commitlint/cli": "^19.8.1",
+    "@commitlint/config-conventional": "^19.8.1",
     "@aws-sdk/client-kms": "^3.1036.0",
     "@cloudflare/workers-types": "4.20250422.0",
     "@pact-foundation/pact": "^16.3.0",

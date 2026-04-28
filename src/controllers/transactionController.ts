@@ -18,10 +18,6 @@ import {
 } from "../config/providers";
 import type { TransactionJobData } from "../queue/transactionQueue";
 import { amlService } from "../services/aml";
-    const {
-      before,
-      after,
-    } = req.query;
 import { twoFactorWithdrawalService } from "../services/twoFactorWithdrawalService";
 import {
   CancelTransactionResponse,
@@ -30,6 +26,9 @@ import {
   TransactionDetailResponse,
   TransactionResponse,
 } from "../types/api";
+import { checkDestinationTrustline, TrustlineError } from "../stellar/trustlines";
+import { getConfiguredPaymentAsset } from "../services/stellar/assetService";
+import { ERROR_CODES } from "../constants/errorCodes";
 
 const IDEMPOTENCY_TTL_HOURS = Number(
   process.env.IDEMPOTENCY_KEY_TTL_HOURS || 24,
@@ -89,8 +88,6 @@ export const transactionSchema = z.object({
   twoFactorToken: z.string().optional(),
   backupCode: z.string().optional(),
 });
-    const before = req.query.before as string | undefined;
-    const after = req.query.after as string | undefined;
 
 export const validateTransaction = (
   req: Request,
@@ -486,6 +483,24 @@ async function processTransactionRequest(
             message: verificationResult.error || "Invalid 2FA token or backup code"
           });
         }
+      }
+    }
+
+    // Verify destination Stellar account has a trustline for the payment asset
+    // before creating the transaction record, to avoid on-chain failures.
+    if (type === "withdraw") {
+      try {
+        const paymentAsset = getConfiguredPaymentAsset();
+        await checkDestinationTrustline(stellarAddress, paymentAsset);
+      } catch (err) {
+        if (err instanceof TrustlineError) {
+          return res.status(400).json({
+            error: err.message,
+            code: ERROR_CODES.TRUSTLINE_MISSING,
+          });
+        }
+        // Unexpected Horizon error — surface as 502 so callers can retry
+        return res.status(502).json({ error: "Failed to verify destination trustline" });
       }
     }
 
